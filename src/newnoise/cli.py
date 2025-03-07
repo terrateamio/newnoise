@@ -1,0 +1,28 @@
+import argparse
+from collections import deque
+
+from . import data, handlers
+
+
+HANDLERS = [
+    handlers.InstanceHandler(),
+    handlers.EC2HostHandler(),
+    handlers.LoadBalancerHandler(),
+    handlers.RDSHandler(),
+    handlers.S3Handler(),
+    handlers.SQSHandler(),
+]
+
+
+def run():
+    parser = argparse.ArgumentParser(description="NewNoise CLI")
+    parser.add_argument(
+        "input", type=str, help="Path to the input CSV",
+    )
+    parser.add_argument(
+        "-o", "--output", type=str, help="Path to the output directory", required=False
+    )
+    args = parser.parse_args()
+
+    # "/home/jmsdnns/Mtrls/Terrateam/data/products.csv"
+    deque(data.to_oiq(args.input, HANDLERS, output_dir=args.output), maxlen=0)
