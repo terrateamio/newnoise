@@ -78,9 +78,6 @@ def of_csv(input_file, handlers, **column_query):
                         (match_set, price_info) = h.reduce(row)
                         (match_set, price_info) = h.transform(match_set, price_info)
                         yield (row, h, match_set, price_info)
-                # cannot create match set
-                else:
-                    yield (row, None, None, None)
 
 
 def prices_iter(row, required=None):
