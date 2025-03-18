@@ -39,16 +39,12 @@ class BaseInstanceHandler(BaseHandler):
     def reduce(self, row):
         return data.reduce(
             row,
+            # only instance type
             product_attrs={
-                "instanceType": "instance_type",
-                "capacitystatus": "capacity_status",
-                "operation": "operation",
-                "usagetype": "usage_type",
+                "instanceType": "values.instance_type",
             },
-            price_attrs={
-                "purchaseOption": "purchase_option",
-                "USD": "USD",
-            },
+            # keep all price info
+            price_attrs=None,
         )
 
     def transform(self, match_set, price_info):
@@ -99,10 +95,11 @@ class LoadBalancerHandler(BaseHandler):
             product_attrs={
                 "operation": self.KEY_LBT,
             },
-            price_attrs={
-                "purchaseOption": "purchase_option",
-                "USD": "USD",
-            },
+            price_attrs=None,
+            #price_attrs={
+            #    "purchaseOption": "purchase_option",
+            #    "USD": "USD",
+            #},
         )
 
     def transform(self, match_set, price_info):
@@ -141,10 +138,11 @@ class RDSHandler(BaseHandler):
                 "databaseEdition": "database_edition",
                 "licenseModel": "license_model",
             },
-            price_attrs={
-                "purchaseOption": "purchase_option",
-                "USD": "USD",
-            },
+            price_attrs=None,
+            #price_attrs={
+            #    "purchaseOption": "purchase_option",
+            #    "USD": "USD",
+            #},
         )
 
     def transform(self, match_set, price_info):
@@ -169,10 +167,11 @@ class S3Handler(BaseHandler):
                 "group": "group",
                 "groupDescription": "groupDescription",
             },
-            price_attrs={
-                "purchaseOption": "purchase_option",
-                "USD": "USD",
-            },
+            price_attrs=None,
+            #price_attrs={
+            #    "purchaseOption": "purchase_option",
+            #    "USD": "USD",
+            #},
         )
 
 
@@ -192,8 +191,9 @@ class SQSHandler(BaseHandler):
                 "deliverFrequency": "delivery_frequency",
                 "messageDeliveryOrder": "delivery_order",
             },
-            price_attrs={
-                "purchaseOption": "purchase_option",
-                "USD": "USD",
-            },
+            price_attrs=None,
+            #price_attrs={
+            #    "purchaseOption": "purchase_option",
+            #    "USD": "USD",
+            #},
         )

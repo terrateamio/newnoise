@@ -160,9 +160,10 @@ def to_oiq(input_file, handlers, output_dir=None, **kw):
         writer_key = 'prices'
         csv_writer = prepare_output_writer(output_dir, writer_key, csv_writers)
 
-        if match_set:
-            match_set['m.region'] = row[REGION]
-            match_set['m.type'] = handler.TF
+        # TODO: these are useful,
+        # if match_set:
+        #     match_set['m.region'] = row[REGION]
+        #     match_set['m.type'] = handler.TF
         match_str = match_set_to_string(match_set)
         pi_json = json.dumps(price_info) if price_info else ""
 
