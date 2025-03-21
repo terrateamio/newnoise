@@ -154,17 +154,18 @@ def to_oiq(input_file, handlers, output_dir=None, **kw):
 
     csv_writers = {}
     for row, handler, match_set, price_info in of_csv(input_file, handlers, **kw):
-        # keep file handles to each region based file as created
-        # TODO: remove hardcoded key after switching to multiple files
+        # keep file handles to each writer_key if multiple files are used
         # writer_key = row[REGION]
         writer_key = 'prices'
         csv_writer = prepare_output_writer(output_dir, writer_key, csv_writers)
 
-        # TODO: these are useful,
-        # if match_set:
-        #     match_set['m.region'] = row[REGION]
-        #     match_set['m.type'] = handler.TF
+        if match_set:
+            match_set['type'] = handler.TF
         match_str = match_set_to_string(match_set)
+
+        if price_info:
+            for p in price_info:
+                p['region'] = row[REGION]
         pi_json = json.dumps(price_info) if price_info else ""
 
         new_row = [
