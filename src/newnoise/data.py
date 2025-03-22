@@ -48,7 +48,7 @@ def column_filters(
     return filter
 
 
-def of_csv(input_file, handlers, **column_query):
+def of_csv(input_file, handlers, ccy=None, **column_query):
     """
     Returns all rows in all cases. If a handler matches a row, the matching
     handler and the rowkey it generates are also returned. This provides all
@@ -74,7 +74,7 @@ def of_csv(input_file, handlers, **column_query):
                 row[PRICES] = json.loads(row[PRICES])
                 # can create match set
                 for h in handlers:
-                    if h.match(row):
+                    if h.match(row) and h.match_currency(row, ccy=ccy):
                         (match_set, price_info) = h.reduce(row)
                         (match_set, price_info) = h.transform(match_set, price_info)
                         yield (row, h, match_set, price_info)
@@ -149,11 +149,11 @@ def match_set_to_string(match_set):
     return match_str
 
 
-def to_oiq(input_file, handlers, output_dir=None, **kw):
+def to_oiq(input_file, handlers, output_dir=None, ccy=None, **kw):
     output_dir = prepare_output_dir(output_dir)
 
     csv_writers = {}
-    for row, handler, match_set, price_info in of_csv(input_file, handlers, **kw):
+    for row, handler, match_set, price_info in of_csv(input_file, handlers, ccy=ccy, **kw):
         # keep file handles to each writer_key if multiple files are used
         # writer_key = row[REGION]
         writer_key = 'prices'

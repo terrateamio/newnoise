@@ -18,6 +18,9 @@ class BaseHandler:
     def match(self, row):
         return True
 
+    def match_currency(self, row, ccy=None):
+        return matchers.price_currency(row, ccy=ccy)
+
     def reduce(self, row):
         return row
 

@@ -51,8 +51,16 @@ def product_usagetype(row, **kw):
 # price attribute matching
 
 
-def price_attr(row, key, v=None, p=None):
+def price_attr(row, key, v=None, p=None, ccy=None):
     for price in data.prices_iter(row):
+        # if k is in price, it matches. facilitates currency matching
+        # where currency type is a key with price behind it, instead of
+        # a value. currency is the only field that does that. key is
+        # a required param in all cases, so key should match ccy when
+        # ccy match is performed
+        if ccy and key == ccy and ccy in price:
+            return True
+
         if key in price:
             price_item = price[key]
             if v and price_item == v:
@@ -72,3 +80,13 @@ def price_effectivedatestart(row, **kw):
 
 def price_unit(row, **kw):
     return price_attr(row, "unit", **kw)
+
+
+def price_currency(row, ccy=None):
+    if ccy is None:
+        return True
+    # this syntax looks strange. that is because the currency's key
+    # is the same as its value. if the price is in USD, the key 'USD'
+    # is present. if price is in CNY, the key 'CNY' is present
+    return price_attr(row, ccy, ccy=ccy)
+

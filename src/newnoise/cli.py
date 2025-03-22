@@ -22,7 +22,10 @@ def run():
     parser.add_argument(
         "-o", "--output", type=str, help="Path to the output directory", required=False
     )
+    parser.add_argument(
+        "-c", "--currency", type=str, help="Price currency (eg. USD or CNY)", required=False
+    )
     args = parser.parse_args()
 
     # "/home/jmsdnns/Mtrls/Terrateam/data/products.csv"
-    deque(data.to_oiq(args.input, HANDLERS, output_dir=args.output), maxlen=0)
+    deque(data.to_oiq(args.input, HANDLERS, output_dir=args.output, ccy=args.currency), maxlen=0)
