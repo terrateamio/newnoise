@@ -30,6 +30,22 @@ class BaseHandler:
 
 class BaseInstanceHandler(BaseHandler):
     def match(self, row):
+        # the usagetype for non ec2 has meaningful deviations
+        # from how the data normally looks. it must be cleaned
+        # before matching.
+        if 'usagetype' in row[data.ATTRIBUTES]:
+            ut = row[data.ATTRIBUTES]['usagetype']
+            # take part before :
+            ut_parts = ut.split(':')
+            if len(ut_parts) > 1:
+                ut = ut_parts[0]
+            # take part after hyphen
+            ut_parts = ut.split('-')
+            if len(ut_parts) > 1:
+                ut = ut_parts[1]
+            row[data.ATTRIBUTES]['usagetype'] = ut
+
+        # resume normal matching behavior
         return (
             super().match(row)
             and matchers.product_servicecode(row, v="AmazonEC2")
