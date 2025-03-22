@@ -30,7 +30,7 @@ class BaseHandler:
 
 class BaseInstanceHandler(BaseHandler):
     def match(self, row):
-        # the usagetype for non ec2 has meaningful deviations
+        # the usagetype for ec2 instances has meaningful deviations
         # from how the data normally looks. it must be cleaned
         # before matching.
         if 'usagetype' in row[data.ATTRIBUTES]:
