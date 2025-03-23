@@ -1,12 +1,72 @@
 from . import data, matchers
 
 
+PER_HOUR = set([
+    "Hrs",
+    "Hours",
+    "vCPU-hour",
+    "vCPU-Months",
+    "vCPU-Hours",
+    "ACU-Hr",
+    "ACU-hour",
+    "ACU-Months",
+    "Bucket-Mo",
+])
+
+
+PER_OPERATION = set([
+    "Op",
+    "IOPS-Mo",
+    "Requests",
+    "API Requests",
+    "IOs",
+    "Jobs",
+    "Updates",
+    "CR-Hr",
+    "API Calls",
+])
+
+
+PER_DATA = set([
+    "GB-Mo",
+    "MBPS-Mo",
+    "GB",
+    "Objects",
+    "Gigabyte Month",
+    "Tag-Mo",
+    "GB-month",
+])
+
+
 def clean_usage_type(match_set):
     if "usage_type" in match_set:
         usage = match_set["usage_type"].split(":")
         if len(usage) == 2:
             match_set["usage_type"] = usage[0]
     return match_set
+
+
+def categorize_price_info(price_info):
+    res = []
+    for pi in price_info:
+        if pi['unit'] in PER_HOUR:
+            res.append({
+                'type': 'h',
+                'price': pi['price']
+            })
+        elif pi['unit'] in PER_OPERATION:
+            res.append({
+                'type': 'o',
+                'price': pi['price']
+            })
+        elif pi['unit'] in PER_DATA:
+            res.append({
+                'type': 'd',
+                'price': pi['price']
+            })
+        else:
+            raise Exception('Unknown unit: {}'.format(pi))
+    return res
 
 
 class BaseHandler:
@@ -21,14 +81,11 @@ class BaseHandler:
     def match_currency(self, row, ccy=None):
         return matchers.price_currency(row, ccy=ccy)
 
-    def reduce(self, row):
+    def reduce(self, row, ccy):
         return row
 
     def transform(self, match_set, price_info):
-        return match_set, price_info
-
-    def price(self, row, currency):
-        return data.reduce(row, product_attrs=[], price_attrs={currency: currency})
+        return match_set, categorize_price_info(price_info)
 
 
 class BaseInstanceHandler(BaseHandler):
@@ -55,18 +112,21 @@ class BaseInstanceHandler(BaseHandler):
             and matchers.required_attrs(row, ["instanceType"])
         )
 
-    def reduce(self, row):
+    def reduce(self, row, ccy):
         return data.reduce(
             row,
             # only instance type
             product_attrs={
                 "instanceType": "values.instance_type",
             },
-            # keep all price info
-            price_attrs=None,
+            price_attrs={
+               "unit": "unit",
+               ccy: 'price',
+            },
         )
 
     def transform(self, match_set, price_info):
+        (match_set, price_info) = super().transform(match_set, price_info)
         match_set = clean_usage_type(match_set)
         return match_set, price_info
 
@@ -108,20 +168,20 @@ class LoadBalancerHandler(BaseHandler):
             and matchers.price_purchaseoption(row, v="on_demand")
         )
 
-    def reduce(self, row):
+    def reduce(self, row, ccy):
         return data.reduce(
             row,
             product_attrs={
                 "operation": self.KEY_LBT,
             },
-            price_attrs=None,
-            #price_attrs={
-            #    "purchaseOption": "purchase_option",
-            #    "USD": "USD",
-            #},
+            price_attrs={
+               "unit": "unit",
+               ccy: 'price',
+            },
         )
 
     def transform(self, match_set, price_info):
+        (match_set, price_info) = super().transform(match_set, price_info)
         lbt = match_set[self.KEY_LBT]
 
         # LoadBalancing :: classic
@@ -146,7 +206,7 @@ class RDSHandler(BaseHandler):
     def match(self, row):
         return matchers.product_servicecode(row, v="AmazonRDS")
 
-    def reduce(self, row):
+    def reduce(self, row, ccy):
         return data.reduce(
             row,
             product_attrs={
@@ -157,14 +217,14 @@ class RDSHandler(BaseHandler):
                 "databaseEdition": "database_edition",
                 "licenseModel": "license_model",
             },
-            price_attrs=None,
-            #price_attrs={
-            #    "purchaseOption": "purchase_option",
-            #    "USD": "USD",
-            #},
+            price_attrs={
+               "unit": "unit",
+               ccy: 'price',
+            },
         )
 
     def transform(self, match_set, price_info):
+        (match_set, price_info) = super().transform(match_set, price_info)
         match_set = clean_usage_type(match_set)
         return match_set, price_info
 
@@ -175,7 +235,7 @@ class S3Handler(BaseHandler):
     def match(self, row):
         return matchers.product_servicecode(row, v="AmazonS3")
 
-    def reduce(self, row):
+    def reduce(self, row, ccy):
         return data.reduce(
             row,
             product_attrs={
@@ -186,11 +246,10 @@ class S3Handler(BaseHandler):
                 "group": "group",
                 "groupDescription": "groupDescription",
             },
-            price_attrs=None,
-            #price_attrs={
-            #    "purchaseOption": "purchase_option",
-            #    "USD": "USD",
-            #},
+            price_attrs={
+               "unit": "unit",
+               ccy: 'price',
+            },
         )
 
 
@@ -200,7 +259,7 @@ class SQSHandler(BaseHandler):
     def match(self, row):
         return matchers.product_servicecode(row, v="AWSQueueService")
 
-    def reduce(self, row):
+    def reduce(self, row, ccy):
         return data.reduce(
             row,
             product_attrs={
@@ -210,9 +269,8 @@ class SQSHandler(BaseHandler):
                 "deliverFrequency": "delivery_frequency",
                 "messageDeliveryOrder": "delivery_order",
             },
-            price_attrs=None,
-            #price_attrs={
-            #    "purchaseOption": "purchase_option",
-            #    "USD": "USD",
-            #},
+            price_attrs={
+               "unit": "unit",
+               ccy: 'price',
+            },
         )

@@ -75,9 +75,10 @@ def of_csv(input_file, handlers, ccy=None, **column_query):
                 # can create match set
                 for h in handlers:
                     if h.match(row) and h.match_currency(row, ccy=ccy):
-                        (match_set, price_info) = h.reduce(row)
+                        (match_set, price_info) = h.reduce(row, ccy=ccy)
                         (match_set, price_info) = h.transform(match_set, price_info)
-                        yield (row, h, match_set, price_info)
+                        for pi in price_info:
+                            yield (row, h, match_set, pi)
 
 
 def prices_iter(row, required=None):
@@ -163,16 +164,15 @@ def to_oiq(input_file, handlers, output_dir=None, ccy=None, **kw):
             match_set['type'] = handler.TF
         match_str = match_set_to_string(match_set)
 
-        if price_info:
-            for p in price_info:
-                p['region'] = row[REGION]
-        pi_json = json.dumps(price_info) if price_info else ""
+        pricing_match_str = match_set_to_string({'region': row[REGION]})
 
         new_row = [
             row[SERVICE],
             row[PRODUCTFAMILY],
             match_str,
-            pi_json,
+            pricing_match_str,
+            price_info['price'],
+            price_info['type'],
         ]
         csv_writer.writerow(new_row)
         yield new_row
