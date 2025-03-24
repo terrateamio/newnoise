@@ -1,4 +1,4 @@
-from . import data, matchers
+from . import cleaners, data, matchers
 
 
 def clean_usage_type(match_set):
@@ -15,6 +15,9 @@ class BaseHandler:
     def __init__(self, **match_params):
         self.match_params = match_params
 
+    def clean(self, row):
+        pass
+
     def match(self, row):
         return True
 
@@ -30,27 +33,20 @@ class BaseHandler:
 
 class BaseInstanceHandler(BaseHandler):
     def match(self, row):
-        # the usagetype for ec2 instances has meaningful deviations
-        # from how the data normally looks. it must be cleaned
-        # before matching.
-        if 'usagetype' in row[data.ATTRIBUTES]:
-            ut = row[data.ATTRIBUTES]['usagetype']
-            # take part before :
-            ut_parts = ut.split(':')
-            if len(ut_parts) > 1:
-                ut = ut_parts[0]
-            # take part after hyphen
-            ut_parts = ut.split('-')
-            if len(ut_parts) > 1:
-                ut = ut_parts[1]
-            row[data.ATTRIBUTES]['usagetype'] = ut
-
-        # resume normal matching behavior
-        return (
+        if (
             super().match(row)
             and matchers.product_servicecode(row, v="AmazonEC2")
             and matchers.required_attrs(row, ["instanceType"])
-        )
+        ):
+            # clean happens only after confirming it is a type
+            # known to have the issue
+            self.clean(row) 
+            return True
+        return False
+
+    def clean(self, row):
+        new_ut = cleaners.usage_type(row)
+        row[data.ATTRIBUTES]['usagetype'] = new_ut
 
     def reduce(self, row):
         return data.reduce(
@@ -64,7 +60,6 @@ class BaseInstanceHandler(BaseHandler):
 
     def transform(self, match_set, price_info):
         (match_set, price_info) = super().transform(match_set, price_info)
-        match_set = clean_usage_type(match_set)
         return match_set, price_info
 
 
@@ -121,13 +116,13 @@ class LoadBalancerHandler(BaseHandler):
         # LoadBalancing :: classic
         if lbt == "LoadBalancing":
             match_set[self.KEY_LBT] = "classic"
-        # LoadBalancing:Application
+            # LoadBalancing:Application
         elif lbt == "LoadBalancing:Application":
             match_set[self.KEY_LBT] = "application"
-        # LoadBalancing:Network
+            # LoadBalancing:Network
         elif lbt == "LoadBalancing:Network":
             match_set[self.KEY_LBT] = "network"
-        # LoadBalancing:Gateway
+            # LoadBalancing:Gateway
         elif lbt == "LoadBalancing:Gateway":
             match_set[self.KEY_LBT] = "gateway"
 
