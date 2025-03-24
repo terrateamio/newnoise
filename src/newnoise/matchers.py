@@ -48,6 +48,10 @@ def product_usagetype(row, **kw):
     return product_attr(row, "usagetype", **kw)
 
 
+def product_group(row, **kw):
+    return product_attr(row, "group", **kw)
+
+
 # price attribute matching
 
 
