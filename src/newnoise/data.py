@@ -4,6 +4,7 @@ import json
 import urllib.parse
 
 
+
 PRODUCTHASH = 0
 SKU = 1
 VENDORNAME = 2
@@ -14,6 +15,43 @@ ATTRIBUTES = 6
 PRICES = 7
 
 OUTPUT_DIRNAME = "oiqdata"
+
+AVAILABLE_CCY = ['USD', 'CNY']
+
+PER_HOUR = set([
+    "Hrs",
+    "Hours",
+    "vCPU-hour",
+    "vCPU-Months",
+    "vCPU-Hours",
+    "ACU-Hr",
+    "ACU-hour",
+    "ACU-Months",
+    "Bucket-Mo",
+])
+
+PER_OPERATION = set([
+    "Op",
+    "IOPS-Mo",
+    "Requests",
+    "API Requests",
+    "IOs",
+    "Jobs",
+    "Updates",
+    "CR-Hr",
+    "API Calls",
+])
+
+PER_DATA = set([
+    "GB-Mo",
+    "MBPS-Mo",
+    "GB",
+    "Objects",
+    "Gigabyte Month",
+    "Tag-Mo",
+    "GB-month",
+])
+
 
 
 def column_filters(
@@ -75,10 +113,10 @@ def of_csv(input_file, handlers, ccy=None, **column_query):
                 # can create match set
                 for h in handlers:
                     if h.match(row) and h.match_currency(row, ccy=ccy):
-                        (match_set, price_info) = h.reduce(row, ccy=ccy)
-                        (match_set, price_info) = h.transform(match_set, price_info)
-                        for pi in price_info:
-                            yield (row, h, match_set, pi)
+                        (product_match_set, price_info, oiq_prices) = h.reduce(row) 
+                        (product_match_set, price_match_sets) = h.transform(product_match_set, price_info)
+                        for p_ms, o_p in zip(price_match_sets, oiq_prices):
+                            yield (row, h, product_match_set, p_ms, o_p)
 
 
 def prices_iter(row, required=None):
@@ -91,6 +129,35 @@ def prices_iter(row, required=None):
     prices_list = list(prices_list_container)[0]
     for price in prices_list:
         yield price
+
+
+def extract_price(price):
+    """
+    Converts structure of price from CSV to OIQ. Starts by determining what
+    currency price is in, written as `{"USD": "0.0002"}` and converting it to
+    `{"ccy": "USD", "price": "0.0002", "type": "h"}`
+    """
+    new_price = {}
+
+    # 'ccy' and 'price'
+    for known_ccy in AVAILABLE_CCY:
+        if known_ccy in price:
+            new_price['ccy'] = known_ccy
+            new_price['price'] = price[known_ccy]
+            break
+
+    # 'type'
+    p_unit = price['unit']
+    if p_unit in PER_HOUR:
+        new_price['type'] = 'h'
+    elif p_unit in PER_OPERATION:
+        new_price['type'] = 'o'
+    elif p_unit in PER_DATA:
+        new_price['type'] = 'd'
+    else:
+        raise Exception('Unknown unit: {}'.format(p_unit))
+
+    return new_price
 
 
 def reduce(row, product_attrs=None, price_attrs=None):
@@ -122,21 +189,27 @@ def reduce(row, product_attrs=None, price_attrs=None):
     row_prices = row[PRICES]
     # no prices info available
     if not list(row_prices.keys()):
-        return (reduced_product, None)
+        return (reduced_product, None, None)
 
+    new_price_info = []
+    oiq_price_info = []
     # no prices reduction
     if price_attrs is None:
-        return (reduced_product, list(prices_iter(row)))
+        for p in prices_iter(row):
+            new_price_info.append(p)
+            oiq_price_info.append(extract_price(p))
+        return (reduced_product, new_price_info, oiq_price_info)
     # reduce
     else:
-        reduced_prices = []
-        for price in prices_iter(row):
-            price_reduction = {}
-            for k, v in price.items():
+        for p in prices_iter(row):
+            print(".o.", price_attrs)
+            reduction = {}
+            for k, v in p.items():
                 if k in price_attrs:
-                    price_reduction[price_attrs[k]] = v
-            reduced_prices.append(price_reduction)
-        return (reduced_product, reduced_prices)
+                    reduction[price_attrs[k]] = v
+            new_price_info.append(reduction)
+            oiq_price_info.append(extract_price(p))
+        return (reduced_product, new_price_info, oiq_price_info)
 
 
 def match_set_to_string(match_set):
@@ -154,26 +227,29 @@ def to_oiq(input_file, handlers, output_dir=None, ccy=None, **kw):
     output_dir = prepare_output_dir(output_dir)
 
     csv_writers = {}
-    for row, handler, match_set, price_info in of_csv(input_file, handlers, ccy=ccy, **kw):
+    for row, handler, product_match_set, price_match_set, oiq_price in of_csv(input_file, handlers, ccy=ccy, **kw):
         # keep file handles to each writer_key if multiple files are used
         # writer_key = row[REGION]
         writer_key = 'prices'
         csv_writer = prepare_output_writer(output_dir, writer_key, csv_writers)
 
-        if match_set:
-            match_set['type'] = handler.TF
-        match_str = match_set_to_string(match_set)
+        if product_match_set:
+            product_match_set['type'] = handler.TF
+        product_match_str = match_set_to_string(product_match_set)
 
-        pricing_match_str = match_set_to_string({'region': row[REGION]})
+        price_match_set['region'] = row[REGION]
+        pricing_match_str = match_set_to_string(price_match_set)
 
         new_row = [
             row[SERVICE],
             row[PRODUCTFAMILY],
-            match_str,
+            product_match_str,
             pricing_match_str,
-            price_info['price'],
-            price_info['type'],
+            oiq_price['price'],
+            oiq_price['type'],
+            oiq_price['ccy'],
         ]
+        print(".")
         csv_writer.writerow(new_row)
         yield new_row
 
