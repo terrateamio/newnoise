@@ -59,9 +59,7 @@ class BaseInstanceHandler(BaseHandler):
             product_attrs={
                 "instanceType": "values.instance_type",
             },
-            price_attrs={
-                'purchaseOption': 'purchase_option'
-            }
+            price_attrs={}
         )
 
     def transform(self, match_set, price_info):
@@ -146,11 +144,11 @@ class RDSHandler(BaseHandler):
         return data.reduce(
             row,
             product_attrs={
-                "databaseEngine": "database_engine",
+                # "databaseEngine": "database_engine",
                 "engineCode": "engine_code",
                 "instanceType": "instance_type",
                 "deploymentOption": "deployment_option",
-                "databaseEdition": "database_edition",
+                # "databaseEdition": "database_edition",
                 "licenseModel": "license_model",
             },
             price_attrs={},
@@ -159,6 +157,20 @@ class RDSHandler(BaseHandler):
     def transform(self, match_set, price_info):
         (match_set, price_info) = super().transform(match_set, price_info)
         match_set = clean_usage_type(match_set)
+
+        if 'license_model' in match_set:
+            if match_set['license_model'] == "Bring your own license":
+                match_set['license_model'] = "bring-your-own-license"
+            elif match_set['license_model'] == "License included":
+                match_set['license_model'] = "license-included"
+
+        if 'deployment_option' in match_set:
+            if match_set['deployment_option'] == 'Single-AZ':
+                match_set['multi_az'] = "false"
+            elif match_set['deployment_option'] == 'Multi-AZ':
+                match_set['multi_az'] = "true"
+            del match_set['deployment_option']
+
         return match_set, price_info
 
 
@@ -166,21 +178,37 @@ class S3Handler(BaseHandler):
     TF = "aws_s3_bucket"
 
     def match(self, row):
-        return matchers.product_servicecode(row, v="AmazonS3")
+        return (
+            matchers.product_servicecode(row, v="AmazonS3")
+            and (
+                matchers.product_group(row, v="S3-API-Tier1")
+                or matchers.product_group(row, v="S3-API-Tier2")
+            )
+        )
 
     def reduce(self, row):
         return data.reduce(
             row,
             product_attrs={
-                "operation": "operation",
-                "usagetype": "usage_type",
-                "feeCode": "fee_code",
-                "feeDescription": "fee_description",
+                # "operation": "operation",
+                # "usagetype": "usage_type",
                 "group": "group",
-                "groupDescription": "groupDescription",
             },
             price_attrs={},
         )
+
+    def transform(self, match_set, price_info):
+        group = match_set['group']
+        del match_set['group']
+
+        # s3 has one price row
+        price = price_info[0]
+        if group == "S3-API-Tier1":
+            price['tier'] = "1"
+        elif group == "S3-API-Tier2":
+            price['tier'] = "2"
+
+        return match_set, price_info
 
 
 class SQSHandler(BaseHandler):
