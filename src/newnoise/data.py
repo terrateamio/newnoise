@@ -202,7 +202,6 @@ def reduce(row, product_attrs=None, price_attrs=None):
     # reduce
     else:
         for p in prices_iter(row):
-            print(".o.", price_attrs)
             reduction = {}
             for k, v in p.items():
                 if k in price_attrs:
@@ -233,8 +232,8 @@ def to_oiq(input_file, handlers, output_dir=None, ccy=None, **kw):
         writer_key = 'prices'
         csv_writer = prepare_output_writer(output_dir, writer_key, csv_writers)
 
-        if product_match_set:
-            product_match_set['type'] = handler.TF
+        # if product_match_set is not None:
+        product_match_set['type'] = handler.TF
         product_match_str = match_set_to_string(product_match_set)
 
         price_match_set['region'] = row[REGION]
@@ -249,7 +248,6 @@ def to_oiq(input_file, handlers, output_dir=None, ccy=None, **kw):
             oiq_price['type'],
             oiq_price['ccy'],
         ]
-        print(".")
         csv_writer.writerow(new_row)
         yield new_row
 
