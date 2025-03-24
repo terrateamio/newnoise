@@ -8,8 +8,11 @@ HANDLERS = [
     handlers.InstanceHandler(),
     handlers.EC2HostHandler(),
     handlers.LoadBalancerHandler(),
-    handlers.RDSHandler(),
-    handlers.S3Handler(),
+    handlers.RDSInstanceHandler(),
+    handlers.RDSIOPSHandler(),
+    handlers.RDSStorageHandler(),
+    handlers.S3OperationsHandler(),
+    handlers.S3StorageHandler(),
     handlers.SQSHandler(),
 ]
 

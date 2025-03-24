@@ -53,7 +53,6 @@ PER_DATA = set([
 ])
 
 
-
 def column_filters(
     productHash=None,
     sku=None,
@@ -113,7 +112,7 @@ def of_csv(input_file, handlers, ccy=None, **column_query):
                 # can create match set
                 for h in handlers:
                     if h.match(row) and h.match_currency(row, ccy=ccy):
-                        (product_match_set, price_info, oiq_prices) = h.reduce(row) 
+                        (product_match_set, price_info, oiq_prices) = h.reduce(row)
                         (product_match_set, price_match_sets) = h.transform(product_match_set, price_info)
                         for p_ms, o_p in zip(price_match_sets, oiq_prices):
                             yield (row, h, product_match_set, p_ms, o_p)
@@ -236,6 +235,7 @@ def to_oiq(input_file, handlers, output_dir=None, ccy=None, **kw):
         product_match_set['type'] = handler.TF
         product_match_str = match_set_to_string(product_match_set)
 
+        price_match_set['service_provider'] = handler.SERVICE_PROVIDER
         price_match_set['region'] = row[REGION]
         pricing_match_str = match_set_to_string(price_match_set)
 

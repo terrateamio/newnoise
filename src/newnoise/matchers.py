@@ -22,12 +22,14 @@ def required_prices(row, keys):
 # product attribute matching
 
 
-def product_attr(row, key, v=None, p=None):
-    if key in row[data.ATTRIBUTES]:
-        row_attr = row[data.ATTRIBUTES][key]
+def product_attr(row, key, v=None, p=None, c=None, force_value=None):
+    if key in row[data.ATTRIBUTES] or force_value:
+        row_attr = force_value or row[data.ATTRIBUTES][key]
         if v and row_attr == v:
             return True
         if p and row_attr.startswith(p):
+            return True
+        if c and c in row_attr:
             return True
     return False
 
@@ -45,6 +47,23 @@ def product_operation(row, **kw):
 
 
 def product_usagetype(row, **kw):
+    if 'usagetype' in row[data.ATTRIBUTES]:
+        ut = row[data.ATTRIBUTES]['usagetype']
+        # take part before :
+        ut_parts = ut.split(':')
+        if len(ut_parts) > 1:
+            ut = ut_parts[0]
+        # take part after hyphen
+        ut_parts = ut.split('-')
+        if len(ut_parts) > 1:
+            ut = ut_parts[1]
+
+        return product_attr(row, "usagetype", force_value=ut, **kw)
+    else:
+        return False
+
+
+def product_usagetype_raw(row, **kw):
     return product_attr(row, "usagetype", **kw)
 
 
@@ -93,4 +112,3 @@ def price_currency(row, ccy=None):
     # is the same as its value. if the price is in USD, the key 'USD'
     # is present. if price is in CNY, the key 'CNY' is present
     return price_attr(row, ccy, ccy=ccy)
-
