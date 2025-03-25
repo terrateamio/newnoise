@@ -9,15 +9,31 @@ def clean_usage_type(match_set):
     return match_set
 
 
-def process_attr(key, t=None):
+def attr(key, attr_data, t=None):
+    if key in attr_data:
+        attr =  attr_data[key]
+        if callable(t):
+            attr = t(attr)
+        return attr
+    else:
+        return None
+
+
+def attr_product(key, t=None):
     def f(attr_data):
-        if key in attr_data:
-            attr =  attr_data[key]
-            if callable(t):
-                attr = t(attr)
-            return attr
-        else:
-            return None
+        return attr(key, attr_data, t=t)
+    return f
+
+
+def attr_price(key, t=None):
+    def f(price_data, _):
+        return attr(key, price_data, t=t)
+    return f
+
+
+def attr_from_product(key, t=None):
+    def f(_, product_data):
+        return attr(key, product_data, t=t)
     return f
 
 
@@ -86,16 +102,12 @@ class BaseInstanceHandler(AWSBaseHandler):
         clean_ut = transforms.mk_clean_fun(p='-', s=':')
 
         product_data = data.process_product_skel(row, {
-            "values.instance_type": process_attr('instanceType'),
-            "usage_type": process_attr('usagetype', t=clean_ut)
+            "values.instance_type": attr_product('instanceType'),
+            "usage_type": attr_product('usagetype', t=clean_ut)
         })
-
-        if len(row) < data.PRICES:
-            return product_data, None, None
 
         (price_datas, oiq_prices) = data.process_price_skel(row, {
             'service_class': 'instance',
-            # 'purchase_option': process_attr('purchaseOption')
         })
 
         return product_data, price_datas, oiq_prices
@@ -144,7 +156,7 @@ class LoadBalancerHandler(AWSBaseHandler):
 
     def process(self, row):
         product_match_set = data.process_product_skel(row, {
-            self.KEY_LBT: process_attr('operation', t=self.t_operation),
+            self.KEY_LBT: attr_product('operation', t=self.t_operation),
         })
 
         (price_match_sets, oiq_prices) = data.process_price_skel(row, {})
@@ -308,65 +320,57 @@ class LoadBalancerHandler(AWSBaseHandler):
 #             price['service_class'] = 'storage'
 # 
 #         return match_set, price_info
-# 
-# 
-# class S3OperationsHandler(AWSBaseHandler):
-#     TF = "aws_s3_bucket"
-# 
-#     def match(self, row):
-#         return (
-#             matchers.product_servicecode(row, v="AmazonS3")
-#             and (
-#                 matchers.product_group(row, v="S3-API-Tier1")
-#                 or matchers.product_group(row, v="S3-API-Tier2")
-#             )
-#         )
-# 
-#     def reduce(self, row):
-#         return data.reduce(
-#             row,
-#             product_attrs={
-#                 # "operation": "operation",
-#                 # "usagetype": "usage_type",
-#                 "group": "group",
-#             },
-#             price_attrs={},
-#         )
-# 
-#     def transform(self, product_info, price_info):
-#         group = product_info['group']
-#         del product_info['group']
-# 
-#         for price in price_info:
-#             price['service_class'] = 'requests'
-#             if group == "S3-API-Tier1":
-#                 price['tier'] = "1"
-#             elif group == "S3-API-Tier2":
-#                 price['tier'] = "2"
-# 
-#         return product_info, price_info
-# 
-# 
-# class S3StorageHandler(AWSBaseHandler):
-#     TF = "aws_s3_bucket"
-# 
-#     def match(self, row):
-#         return (
-#             matchers.product_servicecode(row, v="AmazonS3")
-#             and matchers.product_usagetype(row, s='-TimedStorage-')
-#         )
-# 
-#     def reduce(self, row):
-#         return data.reduce(
-#             row,
-#             product_attrs={},
-#             price_attrs={},
-#         )
-# 
-#     def transform(self, match_set, price_info):
-#         for price in price_info:
-#             price['service_class'] = 'storage'
-#         return match_set, price_info
+
+
+class S3OperationsHandler(AWSBaseHandler):
+    TF = "aws_s3_bucket"
+
+    def match(self, row):
+        return (
+            matchers.product_servicecode(row, v="AmazonS3")
+            and (
+                matchers.product_group(row, v="S3-API-Tier1")
+                or matchers.product_group(row, v="S3-API-Tier2")
+            )
+        )
+
+    def process(self, row):
+        product_data = data.process_product_skel(row, {})
+
+        if len(row) < data.PRICES:
+            return product_data, None, None
+
+        (price_datas, oiq_prices) = data.process_price_skel(row, {
+            "tier": attr_from_product('group', t=self.t_tier),
+        })
+
+        return product_data, price_datas, oiq_prices
+
+    def t_tier(self, attr):
+        match attr:
+            case "S3-API-Tier1":
+                return "1"
+            case "S3-API-Tier2":
+                return "2"
+        return attr
+
+
+class S3StorageHandler(AWSBaseHandler):
+    TF = "aws_s3_bucket"
+
+    def match(self, row):
+        return (
+            matchers.product_servicecode(row, v="AmazonS3")
+            and matchers.product_usagetype(row, s='-TimedStorage-')
+        )
+
+    def process(self, row):
+        product_data = data.process_product_skel(row, {})
+        (price_datas, oiq_prices) = data.process_price_skel(row, {
+            'service_class': 'storage',
+        })
+        return product_data, price_datas, oiq_prices
+
 # 
 # 
 # class SQSHandler(AWSBaseHandler):

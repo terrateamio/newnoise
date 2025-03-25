@@ -11,8 +11,8 @@ HANDLERS = [
     # handlers.RDSInstanceHandler(),
     # handlers.RDSIOPSHandler(),
     # handlers.RDSStorageHandler(),
-    # handlers.S3OperationsHandler(),
-    # handlers.S3StorageHandler(),
+    handlers.S3OperationsHandler(),
+    handlers.S3StorageHandler(),
     # handlers.SQSHandler(),
 ]
 
