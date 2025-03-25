@@ -192,9 +192,9 @@ class S3Handler(BaseHandler):
             price_attrs={},
         )
 
-    def transform(self, match_set, price_info):
-        group = match_set['group']
-        del match_set['group']
+    def transform(self, product_info, price_info):
+        group = product_info['group']
+        del product_info['group']
 
         # s3 has one price row
         price = price_info[0]
@@ -203,7 +203,7 @@ class S3Handler(BaseHandler):
         elif group == "S3-API-Tier2":
             price['tier'] = "2"
 
-        return match_set, price_info
+        return product_info, price_info
 
 
 class SQSHandler(BaseHandler):
