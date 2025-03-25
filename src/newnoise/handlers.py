@@ -1,11 +1,11 @@
-from . import data, matchers
+from . import data, matchers, transforms
 
 
+# TODO: this should be deleted after reduce & transform are merged
 def clean_usage_type(match_set):
     if "usage_type" in match_set:
-        usage = match_set["usage_type"].split(":")
-        if len(usage) == 2:
-            match_set["usage_type"] = usage[0]
+        usage = transforms.clean(match_set['usage_type'], s=':')
+        match_set["usage_type"] = usage
     return match_set
 
 
@@ -97,7 +97,9 @@ class InstanceHandler(BaseInstanceHandler):
         return (
             super().match(row)
             and matchers.product_operation(row, v="RunInstances")
-            and matchers.product_usagetype(row, p="UnusedBox")
+            and matchers.product_usagetype(
+                row, p="UnusedBox", t=transforms.mk_fun(p='-', s=':')
+            )
             and matchers.price_purchaseoption(row, v="on_demand")
         )
 
@@ -109,7 +111,9 @@ class EC2HostHandler(BaseInstanceHandler):
         return (
             super().match(row)
             and matchers.product_operation(row, v="RunInstances")
-            and matchers.product_usagetype(row, p="UnusedDed")
+            and matchers.product_usagetype(
+                row, p="UnusedDed", t=transforms.mk_fun(p='-', s=':')
+            )
             and matchers.price_purchaseoption(row, v="on_demand")
         )
 
@@ -143,13 +147,13 @@ class LoadBalancerHandler(AWSBaseHandler):
         # LoadBalancing :: classic
         if lbt == "LoadBalancing":
             match_set[self.KEY_LBT] = "classic"
-        # LoadBalancing:Application
+            # LoadBalancing:Application
         elif lbt == "LoadBalancing:Application":
             match_set[self.KEY_LBT] = "application"
-        # LoadBalancing:Network
+            # LoadBalancing:Network
         elif lbt == "LoadBalancing:Network":
             match_set[self.KEY_LBT] = "network"
-        # LoadBalancing:Gateway
+            # LoadBalancing:Gateway
         elif lbt == "LoadBalancing:Gateway":
             match_set[self.KEY_LBT] = "gateway"
 
@@ -162,9 +166,11 @@ class RDSInstanceHandler(AWSBaseHandler):
     def match(self, row):
         return (
             matchers.product_servicecode(row, v="AmazonRDS")
-            and (matchers.product_usagetype_raw(row, v='InstanceUsage')
-                 or matchers.product_usagetype_raw(row, c='InstanceUsage:'))
+            and (
+                matchers.product_usagetype(row, v='InstanceUsage')
+                or matchers.product_usagetype(row, s='InstanceUsage:')
             )
+        )
 
     def reduce(self, row):
         return data.reduce(
@@ -248,7 +254,7 @@ class RDSStorageHandler(AWSBaseHandler):
     def match(self, row):
         return (
             matchers.product_servicecode(row, v="AmazonRDS")
-            and matchers.product_usagetype_raw(row, c='StorageUsage')
+            and matchers.product_usagetype(row, s='StorageUsage')
         )
 
     def reduce(self, row):
@@ -323,9 +329,9 @@ class S3OperationsHandler(AWSBaseHandler):
             price_attrs={},
         )
 
-    def transform(self, match_set, price_info):
-        group = match_set['group']
-        del match_set['group']
+    def transform(self, product_info, price_info):
+        group = product_info['group']
+        del product_info['group']
 
         for price in price_info:
             price['service_class'] = 'requests'
@@ -334,7 +340,7 @@ class S3OperationsHandler(AWSBaseHandler):
             elif group == "S3-API-Tier2":
                 price['tier'] = "2"
 
-        return match_set, price_info
+        return product_info, price_info
 
 
 class S3StorageHandler(AWSBaseHandler):
@@ -343,7 +349,7 @@ class S3StorageHandler(AWSBaseHandler):
     def match(self, row):
         return (
             matchers.product_servicecode(row, v="AmazonS3")
-            and matchers.product_usagetype(row, c='-TimedStorage-')
+            and matchers.product_usagetype(row, s='-TimedStorage-')
         )
 
     def reduce(self, row):
