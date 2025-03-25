@@ -1,22 +1,29 @@
-from . import data
+def prefix(value, prefix=None):
+    if prefix is None:
+        return value
+    v_parts = value.split(prefix)
+    if len(v_parts) > 1:
+        value = v_parts[1]
+    return value
 
-def usage_type(row):
-    """
-    the usagetype for ec2 instances has meaningful deviations
-    from how the data normally looks. it must be cleaned
-    before matching.
-    """
-    if 'usagetype' in row[data.ATTRIBUTES]:
-        ut = row[data.ATTRIBUTES]['usagetype']
-        # take part before :
-        ut_parts = ut.split(':')
-        if len(ut_parts) > 1:
-            ut = ut_parts[0]
-        # take part after hyphen
-        ut_parts = ut.split('-')
-        if len(ut_parts) > 1:
-            ut = ut_parts[1]
-        return ut
-    else:
-        return None
+
+def suffix(value, suffix=None):
+    if suffix is None:
+        return value
+    v_parts = value.split(suffix)
+    if len(v_parts) > 1:
+        value = v_parts[0]
+    return value
+
+
+def clean(attr, p=None, s=None):
+    attr = prefix(attr, p)
+    attr = suffix(attr, s)
+    return attr
+
+
+def mk_clean_fun(p=None, s=None):
+    def f(attr):
+        return clean(attr, p=p, s=s)
+    return f
 
