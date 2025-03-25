@@ -129,7 +129,7 @@ def prices_iter(row):
         yield price
 
 
-def extract_price(price):
+def process_oiq_price(price):
     """
     Converts structure of price from CSV to OIQ. Starts by determining what
     currency price is in, written as `{"USD": "0.0002"}` and converting it to
@@ -186,7 +186,7 @@ def process_price_skel(row, price_skel=None):
     if price_skel is None:
         for p in prices_iter(row):
             new_price_info.append(p)
-            oiq_price_info.append(extract_price(p))
+            oiq_price_info.append(process_oiq_price(p))
         return (new_price_info, oiq_price_info)
 
     else:
@@ -201,7 +201,7 @@ def process_price_skel(row, price_skel=None):
                     output[dst_key] = value
 
             new_price_info.append(output)
-            oiq_price_info.append(extract_price(p))
+            oiq_price_info.append(process_oiq_price(p))
         return (new_price_info, oiq_price_info)
 
 
@@ -220,30 +220,43 @@ def to_oiq(input_file, handlers, output_dir=None, ccy=None, **kw):
     output_dir = prepare_output_dir(output_dir)
 
     csv_writers = {}
-    for row, handler, product_match_set, price_match_set, oiq_price in of_csv(input_file, handlers, ccy=ccy, **kw):
+    for row, handler, product_match_set, price_match_set, oiq_price in of_csv(
+        input_file, handlers, ccy=ccy, **kw
+    ):
+        # TODO: we might be able to drop this whole mechanism now that we know
+        # a single file is sufficient for everything
+        #
         # keep file handles to each writer_key if multiple files are used
         # writer_key = row[REGION]
         writer_key = 'prices'
         csv_writer = prepare_output_writer(output_dir, writer_key, csv_writers)
 
-        # if product_match_set is not None:
+        # explicit link between price and TF resource type
         product_match_set['type'] = handler.TF
-        product_match_str = match_set_to_string(product_match_set)
+        product_match_string = match_set_to_string(product_match_set)
 
+        # explicit link to service provider, eg. aws, gcp, ...
         price_match_set['service_provider'] = handler.SERVICE_PROVIDER
+        # TODO: we may want to explicitly say no region for resources
+        # without one, instead of using the empty string found in input
+        # explicit link to region in each region
         price_match_set['region'] = row[REGION]
-        pricing_match_str = match_set_to_string(price_match_set)
+        price_match_string = match_set_to_string(price_match_set)
 
+        # write the line
         new_row = [
             row[SERVICE],
             row[PRODUCTFAMILY],
-            product_match_str,
-            pricing_match_str,
+            product_match_string,
+            price_match_string,
             oiq_price['price'],
             oiq_price['type'],
             oiq_price['ccy'],
         ]
         csv_writer.writerow(new_row)
+
+        # yielding the row after write is helpful for logging during dev and
+        # does not currently have a purpose beyond that
         yield new_row
 
 
