@@ -112,13 +112,12 @@ def of_csv(input_file, handlers, ccy=None, **column_query):
                 # can create match set
                 for h in handlers:
                     if h.match(row) and h.match_currency(row, ccy=ccy):
-                        (product_info, price_info, oiq_prices) = h.reduce(row) 
-                        (product_match_set, price_match_sets) = h.transform(product_info, price_info)
+                        (product_match_set, price_match_sets, oiq_prices) = h.process(row) 
                         for p_ms, o_p in zip(price_match_sets, oiq_prices):
                             yield (row, h, product_match_set, p_ms, o_p)
 
 
-def prices_iter(row, required=None):
+def prices_iter(row):
     """
     Simplifies navigation of the nested data structures used for price data
     """
@@ -159,55 +158,51 @@ def extract_price(price):
     return new_price
 
 
-def reduce(row, product_attrs=None, price_attrs=None):
-    """
-    Takes the product and price information of a row and reduces both to
-    contain only the listed keys.
-
-    Both `product_attrs` and `price_attrs` are dicts where the key is the
-    attribute name as found in pricing info and the attribute value is the name
-    to use in the reduced output, eg. a way to rename fields as part of the
-    reduction.
-    """
-    reduced_product = {}
-
-    # product
-
-    row_attrs = row[ATTRIBUTES]
-    # no attributes reduction
-    if product_attrs is None:
-        reduced_product = dict(row_attrs)
-    # reduce
+def process_product_skel(row, product_skel=None):
+    product_data = row[ATTRIBUTES]
+    output = {}
+    if product_skel is None:
+        output = dict(product_data)
     else:
-        for name, value in row_attrs.items():
-            if name in product_attrs:
-                reduced_product[product_attrs[name]] = value
+        for dst_key, value in product_skel.items():
+            if callable(value):
+                result = value(product_data)
+                if result is not None:
+                    output[dst_key] = result
+            else:
+                output[dst_key] = value
+    return output
 
-    # prices
 
-    row_prices = row[PRICES]
-    # no prices info available
-    if not list(row_prices.keys()):
-        return (reduced_product, None, None)
+def process_price_skel(row, price_skel=None):
+    price_data = row[PRICES]
+    # empty data
+    if not list(price_data.keys()):
+        return (None, None)
 
     new_price_info = []
     oiq_price_info = []
-    # no prices reduction
-    if price_attrs is None:
+
+    if price_skel is None:
         for p in prices_iter(row):
             new_price_info.append(p)
             oiq_price_info.append(extract_price(p))
-        return (reduced_product, new_price_info, oiq_price_info)
-    # reduce
+        return (new_price_info, oiq_price_info)
+
     else:
         for p in prices_iter(row):
-            reduction = {}
-            for k, v in p.items():
-                if k in price_attrs:
-                    reduction[price_attrs[k]] = v
-            new_price_info.append(reduction)
+            output = {}
+            for dst_key, value in price_skel.items():
+                if callable(value):
+                    result = value(p)
+                    if result is not None:
+                        output[dst_key] = result
+                else:
+                    output[dst_key] = value
+
+            new_price_info.append(output)
             oiq_price_info.append(extract_price(p))
-        return (reduced_product, new_price_info, oiq_price_info)
+        return (new_price_info, oiq_price_info)
 
 
 def match_set_to_string(match_set):

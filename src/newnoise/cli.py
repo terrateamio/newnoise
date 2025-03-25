@@ -6,14 +6,14 @@ from . import data, handlers
 
 HANDLERS = [
     handlers.InstanceHandler(),
-    handlers.EC2HostHandler(),
+    # handlers.EC2HostHandler(),
     handlers.LoadBalancerHandler(),
-    handlers.RDSInstanceHandler(),
-    handlers.RDSIOPSHandler(),
-    handlers.RDSStorageHandler(),
-    handlers.S3OperationsHandler(),
-    handlers.S3StorageHandler(),
-    handlers.SQSHandler(),
+    # handlers.RDSInstanceHandler(),
+    # handlers.RDSIOPSHandler(),
+    # handlers.RDSStorageHandler(),
+    # handlers.S3OperationsHandler(),
+    # handlers.S3StorageHandler(),
+    # handlers.SQSHandler(),
 ]
 
 
