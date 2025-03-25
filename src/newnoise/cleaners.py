@@ -18,5 +18,5 @@ def usage_type(row):
             ut = ut_parts[1]
         return ut
     else:
-        None
+        return None
 
