@@ -207,6 +207,8 @@ def process_price_skel(row, price_skel=None):
     prices in another list ordered the same way.
     """
     price_data = row[PRICES]
+    product_data = row[ATTRIBUTES]
+
     # empty data
     if not list(price_data.keys()):
         return (None, None)
@@ -225,7 +227,7 @@ def process_price_skel(row, price_skel=None):
             output = {}
             for dst_key, value in price_skel.items():
                 if callable(value):
-                    result = value(p)
+                    result = value(p, product_data)
                     if result is not None:
                         output[dst_key] = result
                 else:
