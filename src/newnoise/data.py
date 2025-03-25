@@ -88,9 +88,13 @@ def column_filters(
 def of_csv(input_file, handlers, ccy=None, **column_query):
     """
     Returns all rows in all cases. If a handler matches a row, the matching
-    handler and the rowkey it generates are also returned. This provides all
-    possible data for creating different structures of this data one row at a
-    time.
+    handler is used to process it and create the relevant product matching,
+    price matching, and actual price data.
+
+    If a single product has more than one price, it will yield multiple times
+    for each price with a duplicate copy of the product matching info. This
+    means multiple matches for product data is allowed and the price data
+    should be unique enough to understand what multiple matches means.
     """
     filters = column_filters(**column_query)
 
@@ -159,6 +163,21 @@ def process_oiq_price(price):
 
 
 def process_product_skel(row, product_skel=None):
+    """
+    Takes a row of data and skeleton for describing the product. The values in
+    a skeleton can be either primitives or a callable. Callables are expected
+    to be the typical case and they do the job of retrieving particular values
+    from any row to map them into the skeleton's format. If the value is not a
+    callable, it is copied as-is.
+
+    The product skeleton's structure is roughly this:
+
+        {
+            "output_key_a": process_attr(input_key),
+            "output_key_b": "some value and not a constant",
+            ...
+        }
+    """
     product_data = row[ATTRIBUTES]
     output = {}
     if product_skel is None:
@@ -175,6 +194,18 @@ def process_product_skel(row, product_skel=None):
 
 
 def process_price_skel(row, price_skel=None):
+    """
+    Takes a row of data and skeleton for describing a price. A row can have
+    multiple prices, so this function loops across each price, filling out a
+    skeleton's structure on each iteration.
+
+    The skeleton's values should be values unique to the price's purpose. The
+    actual price data, eg. amount, currency, and usage type, are extracted into
+    OIQ price format.
+
+    The processed skeletons are returned as a list with the corresponding OIQ
+    prices in another list ordered the same way.
+    """
     price_data = row[PRICES]
     # empty data
     if not list(price_data.keys()):
@@ -206,6 +237,21 @@ def process_price_skel(row, price_skel=None):
 
 
 def match_set_to_string(match_set):
+    """
+    Converts both product and price match sets into a URL encoded string of
+    keypairs, k=v, joined by an & sign.
+
+    Consider the following dict as input:
+
+        {
+            "foo": "fighters",
+            "bar": "food",
+        }
+
+    This would create a string like:
+
+        foo=fighters&bar=food
+    """
     match_str = ""
     if match_set:
         safe_str = urllib.parse.quote
@@ -217,6 +263,11 @@ def match_set_to_string(match_set):
 
 
 def to_oiq(input_file, handlers, output_dir=None, ccy=None, **kw):
+    """
+    This function starts the main processing done by newnoise. It processes an
+    input file with a list of handlers and writes the output to `output_dir`,
+    either provided as cli param or the default
+    """
     output_dir = prepare_output_dir(output_dir)
 
     csv_writers = {}

@@ -71,6 +71,11 @@ def product_group(row, **kw):
 
 
 def price_attr(row, key, v=None, p=None, ccy=None):
+    """
+    v: check v exact match for attr
+    p: check p is found at start of attr
+    ccy: check ccy is match for at least one price (note: may not be what we want)
+    """
     for price in data.prices_iter(row):
         # if k is in price, it matches. facilitates currency matching
         # where currency type is a key with price behind it, instead of
@@ -102,6 +107,11 @@ def price_unit(row, **kw):
 
 
 def price_currency(row, ccy=None):
+    """
+    this function works around unusual nature of price structure found in input
+    csv. From the caller's POV, it operates the same way the other matchers,
+    making it easy to check if a row's prices are ccy or not.
+    """
     if ccy is None:
         return True
     # this syntax looks strange. that is because the currency's key
