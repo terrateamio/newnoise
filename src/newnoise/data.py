@@ -293,7 +293,8 @@ def to_oiq(input_file, handlers, output_dir=None, ccy=None, **kw):
         # TODO: we may want to explicitly say no region for resources
         # without one, instead of using the empty string found in input
         # explicit link to region in each region
-        price_match_set['region'] = row[REGION]
+        if row[REGION]:
+            price_match_set['region'] = row[REGION]
         price_match_string = match_set_to_string(price_match_set)
 
         # write the line

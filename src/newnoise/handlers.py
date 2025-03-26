@@ -1,6 +1,14 @@
 from . import data, matchers, transforms
 
 
+def assert_usage_amount_all_or_nothing(price_info):
+    def has_usage(pi):
+        return 'start_usage_amount' in pi or 'end_usage_amount' in pi
+
+    if any([has_usage(pi) for pi in price_info]) and not all([has_usage(pi) for pi in price_info]):
+        raise Exception('Missing startUsageAmount or endUsageAmount')
+
+
 def attr(key, attr_data, t=None):
     if key in attr_data:
         attr =  attr_data[key]
@@ -317,22 +325,59 @@ class S3StorageHandler(AWSBaseHandler):
         return product_data, price_datas, oiq_prices
 
 
+class SQSFIFOHandler(AWSBaseHandler):
+    TF = "aws_sqs_queue"
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v="AWSQueueService")
+            and matchers.product_usagetype_raw(row, c='Requests')
+            and matchers.product_usagetype_raw(row, c='Requests-FIFO')
+        )
+
+    def reduce(self, row):
+        return data.reduce(
+            row,
+            product_attrs={},
+            price_attrs={
+                'startUsageAmount': 'start_usage_amount',
+                'endUsageAmount': 'end_usage_amount',
+            },
+        )
+
+    def transform(self, product_info, price_info):
+        assert_usage_amount_all_or_nothing(price_info)
+        product_info['values.fifo_queue'] = 'false'
+        for price in price_info:
+            price['service_class'] = 'requests'
+        return product_info, price_info
+
+
 class SQSHandler(AWSBaseHandler):
     TF = "aws_sqs_queue"
 
     def match(self, row):
-        return matchers.product_servicecode(row, v="AWSQueueService")
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v="AWSQueueService")
+            and matchers.product_usagetype_raw(row, c='Requests')
+            and not matchers.product_usagetype_raw(row, c='Requests-FIFO')
+        )
 
-    def process(self, row):
-        product_match_set = data.process_product_skel(row, {
-            'values.usage_type': attr_product('usagetype'),
-            'values.queue_type': attr_product('queueType'),
-            'values.deliver_order': attr_product('messageDeliveryOrder'),
-        })
+    def reduce(self, row):
+        return data.reduce(
+            row,
+            product_attrs={},
+            price_attrs={
+                'startUsageAmount': 'start_usage_amount',
+                'endUsageAmount': 'end_usage_amount',
+            },
+        )
 
-        (price_match_sets, oiq_prices) = data.process_price_skel(row, {
-            'service_class': 'instance',
-        })
-
-        return product_match_set, price_match_sets, oiq_prices
-
+    def transform(self, product_info, price_info):
+        assert_usage_amount_all_or_nothing(price_info)
+        product_info['values.fifo_queue'] = 'true'
+        for price in price_info:
+            price['service_class'] = 'requests'
+        return product_info, price_info
