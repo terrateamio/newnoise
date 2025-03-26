@@ -1,40 +1,171 @@
 from . import data, matchers, transforms
 
 
-def assert_usage_amount_all_or_nothing(price_info):
-    def has_usage(pi):
-        return 'start_usage_amount' in pi or 'end_usage_amount' in pi
+PER_HOUR = set([
+    v.lower()
+    for v in [
+            "Hrs",
+            "Hours",
+            "vCPU-hour",
+            "vCPU-Months",
+            "vCPU-Hours",
+            "ACU-Hr",
+            "ACU-hour",
+            "ACU-Months",
+            "Bucket-Mo",
+    ]
+])
 
-    if any([has_usage(pi) for pi in price_info]) and not all([has_usage(pi) for pi in price_info]):
-        raise Exception('Missing startUsageAmount or endUsageAmount')
+PER_OPERATION = set([
+    v.lower()
+    for v in [
+            "Op",
+            "IOPS-Mo",
+            "Requests",
+            "API Requests",
+            "IOs",
+            "Jobs",
+            "Updates",
+            "CR-Hr",
+            "API Calls",
+    ]
+])
+
+PER_DATA = set([
+    v.lower()
+    for v in [
+            "GB-Mo",
+            "MBPS-Mo",
+            "GB",
+            "Objects",
+            "Gigabyte Month",
+            "Tag-Mo",
+            "GB-month",
+    ]
+])
+
+IGNORE_UNITS = set([
+    v.lower()
+    for v in [
+            'Quantity'
+    ]
+])
+
+
+def assert_usage_amount_all_or_nothing(iter):
+    for product_match_set, pricing_match_set, price_data in iter:
+        def has_usage(pi):
+            return 'start_usage_amount' in pi or 'end_usage_amount' in pi
+
+        if any([has_usage(pi) for pi in pricing_match_set]) and \
+           not all([has_usage(pi) for pi in pricing_match_set]):
+            raise Exception(
+                'Missing startUsageAmount or endUsageAmount {} {} {}'.format(
+                    product_match_set,
+                    pricing_match_set,
+                    price_data))
+
+        yield (product_match_set, pricing_match_set, price_data)
 
 
 def attr(key, attr_data, t=None):
     if key in attr_data:
-        attr =  attr_data[key]
-        if callable(t):
+        attr = attr_data[key]
+        if t:
             attr = t(attr)
         return attr
     else:
         return None
 
 
-def attr_product(key, t=None):
-    def f(attr_data):
-        return attr(key, attr_data, t=t)
+def product(key, t=None):
+    def f(row, _):
+        return attr(key, row[data.ATTRIBUTES], t=t)
     return f
 
 
-def attr_price(key, t=None):
-    def f(price_data, _):
-        return attr(key, price_data, t=t)
+def price(key, t=None):
+    def f(_, price_attrs):
+        return attr(key, price_attrs, t=t)
     return f
 
 
-def attr_from_product(key, t=None):
-    def f(_, product_data):
-        return attr(key, product_data, t=t)
+def priced_by_hours(_row, price_attrs):
+    unit = price_attrs['unit'].lower()
+    if unit in PER_HOUR:
+        return 'h'
+    elif unit in IGNORE_UNITS or unit in PER_OPERATION or unit in PER_DATA:
+        return None
+    else:
+        raise Exception('price_by_hours unknoown unit: {}'.format(price_attrs))
+
+
+def priced_by_ops(_row, price_attrs):
+    unit = price_attrs['unit'].lower()
+    if unit in PER_OPERATION:
+        return 'o'
+    elif unit in IGNORE_UNITS or unit in PER_HOUR or unit in PER_DATA:
+        return None
+    else:
+        raise Exception('price_by_operations unknoown unit: {}'.format(price_attrs))
+
+
+def priced_by_data(_row, price_attrs):
+    unit = price_attrs['unit'].lower()
+    if unit in PER_DATA:
+
+        return 'd'
+    elif unit in IGNORE_UNITS or unit in PER_HOUR or unit in PER_OPERATION:
+        return None
+    else:
+        raise Exception('price_by_data unknoown unit: {}'.format(price_attrs))
+
+
+def const(v):
+    def f(_row, _price_attrs):
+        return v
     return f
+
+
+def with_(d, v):
+    d.update(v)
+    return d
+
+
+def normalize_purchase_option(attr):
+    if attr == 'OnDemand':
+        return 'on_demand'
+    else:
+        return attr
+
+
+def normalize_provision(attr):
+    amount, unit = attr.split()
+    amount = int(amount)
+    match unit:
+        case 'TB':
+            return str(amount * 1000)
+        case 'GB':
+            return str(amount)
+
+
+def process(row, product_ms, pricing_ms, priced_by, service_provider, tf_resource, service_class):
+    return data.process(
+            row,
+            with_({'type': const(tf_resource)}, product_ms),
+            with_(
+                {
+                    'end_provision_amount': product('maxVolumeSize', t=normalize_provision),
+                    'end_usage_amount': price('endUsageAmount'),
+                    'purchase_option': price('purchaseOption', t=normalize_purchase_option),
+                    'region': product('regionCode'),
+                    'service_class': const(service_class),
+                    'service_provider': const(service_provider),
+                    'start_provision_amount': product('minVolumeSize', t=normalize_provision),
+                    'start_usage_amount': price('startUsageAmount'),
+                },
+                pricing_ms),
+            priced_by)
 
 
 class BaseHandler:
@@ -48,13 +179,10 @@ class BaseHandler:
         return True
 
     def match_currency(self, row, ccy=None):
-        return matchers.price_currency(row, ccy=ccy)
+     return matchers.price_currency(row, ccy=ccy)
 
-    def reduce(self, row):
-        return data.reduce(row, product_attrs=None, price_attrs=None)
-
-    def transform(self, match_set, price_info):
-        return match_set, price_info
+    def process(self, row):
+        raise NotImplementedError()
 
 
 class AWSBaseHandler(BaseHandler):
@@ -72,16 +200,17 @@ class BaseInstanceHandler(AWSBaseHandler):
     def process(self, row):
         clean_ut = transforms.mk_clean_fun(p='-', s=':')
 
-        product_data = data.process_product_skel(row, {
-            "values.instance_type": attr_product('instanceType'),
-            "usage_type": attr_product('usagetype', t=clean_ut)
-        })
-
-        (price_datas, oiq_prices) = data.process_price_skel(row, {
-            'service_class': 'instance',
-        })
-
-        return product_data, price_datas, oiq_prices
+        return process(
+            row,
+            {
+                "values.instance_type": product('instanceType'),
+                "usage_type": product('usagetype', t=clean_ut)
+            },
+            {},
+            priced_by_hours,
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class='instance')
 
 
 class InstanceHandler(BaseInstanceHandler):
@@ -126,13 +255,16 @@ class LoadBalancerHandler(AWSBaseHandler):
         )
 
     def process(self, row):
-        product_match_set = data.process_product_skel(row, {
-            self.KEY_LBT: attr_product('operation', t=self.t_operation),
-        })
-
-        (price_match_sets, oiq_prices) = data.process_price_skel(row, {})
-
-        return product_match_set, price_match_sets, oiq_prices
+        return process(
+            row,
+            {
+                self.KEY_LBT: product('operation', t=self.t_operation),
+            },
+            {},
+            priced_by_data,
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class='data')
 
     def t_operation(self, attr):
         match attr:
@@ -153,7 +285,7 @@ class RDSBaseHandler(AWSBaseHandler):
     """
     # https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_CreateDBInstance.html
     ENGINE_LOOKUP = {
-        'Any': '',
+        'Any': None,
         "Aurora MySQL": "aurora-mysql",
         "Aurora PostgreSQL": "aurora-postgresql",
         "Db2": "db2",
@@ -168,7 +300,7 @@ class RDSBaseHandler(AWSBaseHandler):
     }
 
     EDITION_LOOKUP = {
-        None: "",
+        None: None,
         "Advanced": "ae",
         "Enterprise": "ee",
         "Standard": "se",
@@ -179,14 +311,12 @@ class RDSBaseHandler(AWSBaseHandler):
         "Developer": "dev",
     }
 
-    def a_engine(self):
-        def f(attr_data):
-            engine = self.ENGINE_LOOKUP[attr_data.get('databaseEngine')]
-            edition = self.EDITION_LOOKUP[attr_data.get('databaseEdition', None)]
-            if edition:
-                engine = '-'.join([engine, edition])
-            return engine
-        return f
+    def a_engine(self, row, price_attrs):
+        engine = self.ENGINE_LOOKUP[product('databaseEngine')(row, price_attrs)]
+        edition = self.EDITION_LOOKUP[product('databaseEdition')(row, price_attrs)]
+        if edition:
+            engine = '-'.join([engine, edition])
+        return engine
 
     def t_license_model(self,  lm):
         match lm:
@@ -211,25 +341,27 @@ class RDSInstanceHandler(RDSBaseHandler):
     def match(self, row):
         return (
             matchers.product_servicecode(row, v="AmazonRDS")
+            and not matchers.product_attr(row, 'databaseEdition', c='BYOM')
             and (
                 matchers.product_usagetype(row, v='InstanceUsage')
-                or matchers.product_usagetype(row, s='InstanceUsage:')
+                or matchers.product_usagetype(row, c='InstanceUsage:')
             )
         )
 
     def process(self, row):
-        product_match_set = data.process_product_skel(row, {
-            'values.engine': self.a_engine(),
-            'values.instance_class': attr_product('instanceType'),
-            'values.multi_az': attr_product('deploymentOption', t=self.t_deployment_option),
-            'values.license_model': attr_product('licenseModel', t=self.t_license_model)
-        })
-
-        (price_match_sets, oiq_prices) = data.process_price_skel(row, {
-            'service_class': 'instance',
-        })
-
-        return product_match_set, price_match_sets, oiq_prices
+        return process(
+            row,
+            {
+                'values.engine': self.a_engine,
+                'values.instance_class': product('instanceType'),
+                'values.multi_az': product('deploymentOption', t=self.t_deployment_option),
+                # 'values.license_model': product('licenseModel', t=self.t_license_model)
+            },
+            {},
+            priced_by_hours,
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class='instance')
 
 
 class RDSIOPSHandler(RDSBaseHandler):
@@ -238,17 +370,44 @@ class RDSIOPSHandler(RDSBaseHandler):
     def match(self, row):
         return (
             matchers.product_servicecode(row, v="AmazonRDS")
-            and matchers.product_group(row, v='RDS I/O Operation')
+            and not matchers.product_attr(row, 'databaseEdition', c='BYOM')
+            and (
+                (matchers.product_usagetype(row, s='StorageIOUsage')
+                 and matchers.product_attr(row, 'volumeType', v='Magnetic'))
+                or matchers.product_usagetype(row, s='GP3-PIOPS')
+                or matchers.product_usagetype(row, s='Multi-AZ-GP3-PIOPS')
+                or matchers.product_usagetype(row, s='RDS:PIOPS')
+                or matchers.product_usagetype(row, s='RDS:Multi-AZ-PIOPS')
+                or matchers.product_usagetype(row, s='RDS:IO2-PIOPS')
+                or matchers.product_usagetype(row, s='RDS:Multi-AZ-IO2-PIOPS')
+            )
         )
 
     def process(self, row):
-        product_match_set = data.process_product_skel(row, {})
+        return process(
+            row,
+            {
+                'values.engine': self.a_engine,
+                'values.storage_type': product('usagetype', t=self.storage_type)
+            },
+            {},
+            priced_by_ops,
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class='iops')
 
-        (price_match_sets, oiq_prices) = data.process_price_skel(row, {
-            'service_class': 'instance',
-        })
+    def storage_type(self, usagetype):
+        if usagetype.endswith('StorageIOUsage'):
+            return 'standard'
+        elif usagetype.endswith('GP3-PIOPS') or usagetype.endswith('Multi-AZ-GP3-PIOPS'):
+            return 'gp3'
+        elif usagetype.endswith('RDS:PIOPS') or usagetype.endswith('RDS:Multi-AZ-PIOPS'):
+            return 'io1'
+        elif usagetype.endswith('RDS:IO2-PIOPS') or usagetype.endswith('RDS:Multi-AZ-IO2-PIOPS'):
+            return 'io2'
+        else:
+            raise Exception('Invalid storage_type: {}'.format(attr))
 
-        return product_match_set, price_match_sets, oiq_prices
 
 
 class RDSStorageHandler(RDSBaseHandler):
@@ -257,22 +416,51 @@ class RDSStorageHandler(RDSBaseHandler):
     def match(self, row):
         return (
             matchers.product_servicecode(row, v="AmazonRDS")
-            and matchers.product_usagetype(row, s='StorageUsage')
+            and not matchers.product_attr(row, 'databaseEdition', c='BYOM')
+            and not matchers.product_attr(row, 'databaseEngine', v='Any')
+            and (
+                matchers.product_usagetype(row, s='StorageUsage')
+                or matchers.product_usagetype(row, s='GP2-Storage')
+                or matchers.product_usagetype(row, s='GP3-Storage')
+                or matchers.product_usagetype(row, s='PIOPS-Storage')
+                or matchers.product_usagetype(row, s='PIOPS-Storage-IO2')
+            )
+            and not matchers.product_usagetype(row, c='Mirror')
+            and not matchers.product_usagetype(row, c='Cluster')
         )
 
     def process(self, row):
-        product_match_set = data.process_product_skel(row, {
-            'values.engine': self.a_engine(),
-            'values.instance_class': attr_product('instanceType'),
-            'values.multi_az': attr_product('deploymentOption', t=self.t_deployment_option),
-            'values.license_model': attr_product('licenseModel', t=self.t_license_model)
-        })
+        return process(
+            row,
+            {
+                'values.engine': self.a_engine,
+                'values.multi_az': product('deploymentOption', t=self.t_deployment_option),
+                # 'values.license_model': product('licenseModel', t=self.t_license_model)
+                'values.storage_type': product('usagetype', t=self.storage_type),
+            },
+            {
+                # Start and end usage added automatically, so turn those off.
+                'start_usage_amount': const(None),
+                'end_usage_amount': const(None),
+            },
+            priced_by_data,
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class='storage')
 
-        (price_match_sets, oiq_prices) = data.process_price_skel(row, {
-            'service_class': 'instance',
-        })
-
-        return product_match_set, price_match_sets, oiq_prices
+    def storage_type(self, usagetype):
+        if usagetype.endswith('StorageUsage'):
+            return 'standard'
+        elif usagetype.endswith('GP2-Storage'):
+            return 'gp2'
+        elif usagetype.endswith('GP3-Storage'):
+            return 'gp3'
+        elif usagetype.endswith('PIOPS-Storage'):
+            return 'io1'
+        elif usagetype.endswith('PIOPS-Storage-IO2'):
+            return 'io2'
+        else:
+            raise Exception('Invalid storage_type: {}'.format(attr))
 
 
 class S3OperationsHandler(AWSBaseHandler):
@@ -288,16 +476,16 @@ class S3OperationsHandler(AWSBaseHandler):
         )
 
     def process(self, row):
-        product_data = data.process_product_skel(row, {})
-
-        if len(row) < data.PRICES:
-            return product_data, None, None
-
-        (price_datas, oiq_prices) = data.process_price_skel(row, {
-            "tier": attr_from_product('group', t=self.t_tier),
-        })
-
-        return product_data, price_datas, oiq_prices
+        return process(
+            row,
+            {},
+            {
+                "tier": product('group', t=self.t_tier),
+            },
+            priced_by_ops,
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class='requests')
 
     def t_tier(self, attr):
         match attr:
@@ -314,15 +502,23 @@ class S3StorageHandler(AWSBaseHandler):
     def match(self, row):
         return (
             matchers.product_servicecode(row, v="AmazonS3")
-            and matchers.product_usagetype(row, s='-TimedStorage-')
+            and matchers.product_usagetype(row, c='-TimedStorage-')
         )
 
     def process(self, row):
-        product_data = data.process_product_skel(row, {})
-        (price_datas, oiq_prices) = data.process_price_skel(row, {
-            'service_class': 'storage',
-        })
-        return product_data, price_datas, oiq_prices
+        return process(
+            row,
+            {},
+            {
+                'storage_class': product('storageClass', t=self.storage_class)
+            },
+            priced_by_data,
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class='storage')
+
+    def storage_class(self, attr):
+        return attr.lower().replace(' ', '_').replace('-', '_')
 
 
 class SQSFIFOHandler(AWSBaseHandler):
@@ -332,26 +528,21 @@ class SQSFIFOHandler(AWSBaseHandler):
         return (
             super().match(row)
             and matchers.product_servicecode(row, v="AWSQueueService")
-            and matchers.product_usagetype_raw(row, c='Requests')
-            and matchers.product_usagetype_raw(row, c='Requests-FIFO')
+            and matchers.product_usagetype(row, c='Requests')
+            and matchers.product_usagetype(row, c='Requests-FIFO')
         )
 
-    def reduce(self, row):
-        return data.reduce(
+    def process(self, row):
+        return process(
             row,
-            product_attrs={},
-            price_attrs={
-                'startUsageAmount': 'start_usage_amount',
-                'endUsageAmount': 'end_usage_amount',
+            {
+                'values.fifo_queue': const('false'),
             },
-        )
-
-    def transform(self, product_info, price_info):
-        assert_usage_amount_all_or_nothing(price_info)
-        product_info['values.fifo_queue'] = 'false'
-        for price in price_info:
-            price['service_class'] = 'requests'
-        return product_info, price_info
+            {},
+            priced_by_ops,
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class='requests')
 
 
 class SQSHandler(AWSBaseHandler):
@@ -361,23 +552,19 @@ class SQSHandler(AWSBaseHandler):
         return (
             super().match(row)
             and matchers.product_servicecode(row, v="AWSQueueService")
-            and matchers.product_usagetype_raw(row, c='Requests')
-            and not matchers.product_usagetype_raw(row, c='Requests-FIFO')
+            and matchers.product_usagetype(row, c='Requests')
+            and not matchers.product_usagetype(row, c='Requests-FIFO')
         )
 
-    def reduce(self, row):
-        return data.reduce(
+
+    def process(self, row):
+        return process(
             row,
-            product_attrs={},
-            price_attrs={
-                'startUsageAmount': 'start_usage_amount',
-                'endUsageAmount': 'end_usage_amount',
+            {
+                'values.fifo_queue': const('true'),
             },
-        )
-
-    def transform(self, product_info, price_info):
-        assert_usage_amount_all_or_nothing(price_info)
-        product_info['values.fifo_queue'] = 'true'
-        for price in price_info:
-            price['service_class'] = 'requests'
-        return product_info, price_info
+            {},
+            priced_by_ops,
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class='requests')

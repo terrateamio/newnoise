@@ -22,7 +22,7 @@ def required_prices(row, keys):
 # product attribute matching
 
 
-def product_attr(row, key, t=None, v=None, p=None, s=None):
+def product_attr(row, key, t=None, v=None, p=None, s=None, c=None):
     """
     t: apply transform function t before checks
     v: check v exact match for attr
@@ -41,7 +41,10 @@ def product_attr(row, key, t=None, v=None, p=None, s=None):
         if p and row_attr.startswith(p):
             return True
 
-        if s and s in row_attr:
+        if s and row_attr.endswith(s):
+            return True
+
+        if c and c in row_attr:
             return True
 
     return False
@@ -76,7 +79,7 @@ def price_attr(row, key, v=None, p=None, ccy=None):
     p: check p is found at start of attr
     ccy: check ccy is match for at least one price (note: may not be what we want)
     """
-    for price in data.prices_iter(row):
+    for price in [x for outer in row[data.PRICES].values() for x in outer]:
         # if k is in price, it matches. facilitates currency matching
         # where currency type is a key with price behind it, instead of
         # a value. currency is the only field that does that. key is
