@@ -316,23 +316,23 @@ class S3StorageHandler(AWSBaseHandler):
         })
         return product_data, price_datas, oiq_prices
 
-# 
-# 
-# class SQSHandler(AWSBaseHandler):
-#     TF = "aws_sqs_queue"
-# 
-#     def match(self, row):
-#         return matchers.product_servicecode(row, v="AWSQueueService")
-# 
-#     def reduce(self, row):
-#         return data.reduce(
-#             row,
-#             product_attrs={
-#                 "operation": "operation",
-#                 "usagetype": "usage_type",
-#                 "queueType": "queye_type",
-#                 "deliverFrequency": "delivery_frequency",
-#                 "messageDeliveryOrder": "delivery_order",
-#             },
-#             price_attrs={},
-#         )
+
+class SQSHandler(AWSBaseHandler):
+    TF = "aws_sqs_queue"
+
+    def match(self, row):
+        return matchers.product_servicecode(row, v="AWSQueueService")
+
+    def process(self, row):
+        product_match_set = data.process_product_skel(row, {
+            'values.usage_type': attr_product('usagetype'),
+            'values.queue_type': attr_product('queueType'),
+            'values.deliver_order': attr_product('messageDeliveryOrder'),
+        })
+
+        (price_match_sets, oiq_prices) = data.process_price_skel(row, {
+            'service_class': 'instance',
+        })
+
+        return product_match_set, price_match_sets, oiq_prices
+

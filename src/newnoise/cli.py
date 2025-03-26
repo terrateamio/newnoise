@@ -13,7 +13,7 @@ HANDLERS = [
     handlers.RDSStorageHandler(),
     handlers.S3OperationsHandler(),
     handlers.S3StorageHandler(),
-    # handlers.SQSHandler(),
+    handlers.SQSHandler(),
 ]
 
 
