@@ -1,14 +1,6 @@
 from . import data, matchers, transforms
 
 
-# TODO: this should be deleted after reduce & transform are merged
-def clean_usage_type(match_set):
-    if "usage_type" in match_set:
-        usage = transforms.clean(match_set['usage_type'], s=':')
-        match_set["usage_type"] = usage
-    return match_set
-
-
 def attr(key, attr_data, t=None):
     if key in attr_data:
         attr =  attr_data[key]
@@ -35,35 +27,6 @@ def attr_from_product(key, t=None):
     def f(_, product_data):
         return attr(key, product_data, t=t)
     return f
-
-
-# From https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_CreateDBInstance.html
-RDS_ENGINE_LOOKUP = {
-    'Any': '',
-    "Aurora MySQL": "aurora-mysql",
-    "Aurora PostgreSQL": "aurora-postgresql",
-    "Db2": "db2",
-    "MariaDB": "mariadb",
-    "MySQL (on-premise for Outpost)": "mysql",
-    "MySQL": "mysql",
-    "Oracle": "oracle",
-    "PostgreSQL (on-premise for Outpost)": "postgres",
-    "PostgreSQL": "postgres",
-    "SQL Server (on-premise for Outpost)": "sqlserver",
-    "SQL Server": "sqlserver",
-}
-
-RDS_EDITION_LOOKUP = {
-    None: "",
-    "Advanced": "ae",
-    "Enterprise": "ee",
-    "Standard": "se",
-    "Standard One": "se",
-    "Standard Two": "se2",
-    "Express": "ex",
-    "Web": "web",
-    "Developer": "dev",
-}
 
 
 class BaseHandler:
@@ -176,150 +139,132 @@ class LoadBalancerHandler(AWSBaseHandler):
         return attr
 
 
-# class RDSInstanceHandler(AWSBaseHandler):
-#     TF = "aws_db_instance"
-# 
-#     def match(self, row):
-#         return (
-#             matchers.product_servicecode(row, v="AmazonRDS")
-#             and (
-#                 matchers.product_usagetype(row, v='InstanceUsage')
-#                 or matchers.product_usagetype(row, s='InstanceUsage:')
-#             )
-#         )
-# 
-#     def reduce(self, row):
-#         return data.reduce(
-#             row,
-#             product_attrs={
-#                 "databaseEngine": "databaseEngine",
-#                 "databaseEdition": "databaseEdition",
-#                 "instanceType": "values.instance_class",
-#                 # "licenseModel": "licenseModel",
-#                 "deploymentOption": "deploymentOption",
-#             },
-#             price_attrs={},
-#         )
-# 
-#     def transform(self, match_set, price_info):
-#         (match_set, price_info) = super().transform(match_set, price_info)
-#         match_set = clean_usage_type(match_set)
-# 
-#         engine = '-'.join(
-#             [v for v in [
-#                 RDS_ENGINE_LOOKUP[match_set.pop('databaseEngine')],
-#                 RDS_EDITION_LOOKUP[match_set.pop('databaseEdition', None)]
-#             ]
-#              if v])
-# 
-#         if engine:
-#             match_set['values.engine'] = engine
-# 
-#         license_model = match_set.pop('licenseModel', None)
-# 
-#         if license_model:
-#             if license_model == "Bring your own license":
-#                 match_set['values.license_model'] = "bring-your-own-license"
-#             elif license_model == "License included":
-#                 match_set['values.license_model'] = "license-included"
-#             else:
-#                 match_set['values.license_model'] = license_model
-# 
-#         deployment_option = match_set.pop('deploymentOption', None)
-#         if deployment_option:
-#             if deployment_option == 'Single-AZ':
-#                 match_set['values.multi_az'] = "false"
-#             elif deployment_option == 'Multi-AZ':
-#                 match_set['values.multi_az'] = "true"
-# 
-#         for price in price_info:
-#             price['service_class'] = 'instance'
-# 
-#         return match_set, price_info
-# 
-# 
-# class RDSIOPSHandler(AWSBaseHandler):
-#     TF = "aws_db_instance"
-# 
-#     def match(self, row):
-#         return (
-#             matchers.product_servicecode(row, v="AmazonRDS")
-#             and matchers.product_group(row, v='RDS I/O Operation')
-#         )
-# 
-#     def reduce(self, row):
-#         return data.reduce(
-#             row,
-#             product_attrs={},
-#             price_attrs={},
-#         )
-# 
-#     def transform(self, match_set, price_info):
-#         (match_set, price_info) = super().transform(match_set, price_info)
-#         match_set = clean_usage_type(match_set)
-# 
-#         for price in price_info:
-#             price['service_class'] = 'iops'
-# 
-#         return match_set, price_info
-# 
-# 
-# class RDSStorageHandler(AWSBaseHandler):
-#     TF = "aws_db_instance"
-# 
-#     def match(self, row):
-#         return (
-#             matchers.product_servicecode(row, v="AmazonRDS")
-#             and matchers.product_usagetype(row, s='StorageUsage')
-#         )
-# 
-#     def reduce(self, row):
-#         return data.reduce(
-#             row,
-#             product_attrs={
-#                 "databaseEngine": "databaseEngine",
-#                 "databaseEdition": "databaseEdition",
-#                 "instanceType": "values.instance_class",
-#                 # "licenseModel": "licenseModel",
-#                 "deploymentOption": "deploymentOption",
-#             },
-#             price_attrs={},
-#         )
-# 
-#     def transform(self, match_set, price_info):
-#         (match_set, price_info) = super().transform(match_set, price_info)
-#         match_set = clean_usage_type(match_set)
-# 
-#         engine = '-'.join(
-#             [v for v in [
-#                 RDS_ENGINE_LOOKUP[match_set.pop('databaseEngine')],
-#                 RDS_EDITION_LOOKUP[match_set.pop('databaseEdition', None)]
-#             ]
-#              if v])
-# 
-#         if engine:
-#             match_set['values.engine'] = engine
-# 
-#         license_model = match_set.pop('licenseModel', None)
-#         if license_model:
-#             if license_model == "Bring your own license":
-#                 match_set['values.license_model'] = "bring-your-own-license"
-#             elif license_model == "License included":
-#                 match_set['values.license_model'] = "license-included"
-#             else:
-#                 match_set['values.license_model'] = license_model
-# 
-#         deployment_option = match_set.pop('deploymentOption', None)
-#         if deployment_option:
-#             if deployment_option == 'Single-AZ':
-#                 match_set['values.multi_az'] = "false"
-#             elif deployment_option == 'Multi-AZ':
-#                 match_set['values.multi_az'] = "true"
-# 
-#         for price in price_info:
-#             price['service_class'] = 'storage'
-# 
-#         return match_set, price_info
+class RDSBaseHandler(AWSBaseHandler):
+    """
+    Mixin to provide RDS specific features to each RDS product
+    """
+    # https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_CreateDBInstance.html
+    ENGINE_LOOKUP = {
+        'Any': '',
+        "Aurora MySQL": "aurora-mysql",
+        "Aurora PostgreSQL": "aurora-postgresql",
+        "Db2": "db2",
+        "MariaDB": "mariadb",
+        "MySQL (on-premise for Outpost)": "mysql",
+        "MySQL": "mysql",
+        "Oracle": "oracle",
+        "PostgreSQL (on-premise for Outpost)": "postgres",
+        "PostgreSQL": "postgres",
+        "SQL Server (on-premise for Outpost)": "sqlserver",
+        "SQL Server": "sqlserver",
+    }
+
+    EDITION_LOOKUP = {
+        None: "",
+        "Advanced": "ae",
+        "Enterprise": "ee",
+        "Standard": "se",
+        "Standard One": "se",
+        "Standard Two": "se2",
+        "Express": "ex",
+        "Web": "web",
+        "Developer": "dev",
+    }
+
+    def a_engine(self):
+        def f(attr_data):
+            engine = self.ENGINE_LOOKUP[attr_data.get('databaseEngine')]
+            edition = self.EDITION_LOOKUP[attr_data.get('databaseEdition', None)]
+            if edition:
+                engine = '-'.join([engine, edition])
+            return engine
+        return f
+
+    def t_license_model(self,  lm):
+        match lm:
+            case "Bring your own license":
+                return "bring-your-own-license"
+            case "License included":
+                return "license-included"
+            case _:
+                return lm
+
+    def t_deployment_option(self,  do):
+        match do:
+            case 'Single-AZ':
+                return "false"
+            case 'Multi-AZ':
+                return "true"
+
+
+class RDSInstanceHandler(RDSBaseHandler):
+    TF = "aws_db_instance"
+
+    def match(self, row):
+        return (
+            matchers.product_servicecode(row, v="AmazonRDS")
+            and (
+                matchers.product_usagetype(row, v='InstanceUsage')
+                or matchers.product_usagetype(row, s='InstanceUsage:')
+            )
+        )
+
+    def process(self, row):
+        product_match_set = data.process_product_skel(row, {
+            'values.engine': self.a_engine(),
+            'values.instance_class': attr_product('instanceType'),
+            'values.multi_az': attr_product('deploymentOption', t=self.t_deployment_option),
+            'values.license_model': attr_product('licenseModel', t=self.t_license_model)
+        })
+
+        (price_match_sets, oiq_prices) = data.process_price_skel(row, {
+            'service_class': 'instance',
+        })
+
+        return product_match_set, price_match_sets, oiq_prices
+
+
+class RDSIOPSHandler(RDSBaseHandler):
+    TF = "aws_db_instance"
+
+    def match(self, row):
+        return (
+            matchers.product_servicecode(row, v="AmazonRDS")
+            and matchers.product_group(row, v='RDS I/O Operation')
+        )
+
+    def process(self, row):
+        product_match_set = data.process_product_skel(row, {})
+
+        (price_match_sets, oiq_prices) = data.process_price_skel(row, {
+            'service_class': 'instance',
+        })
+
+        return product_match_set, price_match_sets, oiq_prices
+
+
+class RDSStorageHandler(RDSBaseHandler):
+    TF = "aws_db_instance"
+
+    def match(self, row):
+        return (
+            matchers.product_servicecode(row, v="AmazonRDS")
+            and matchers.product_usagetype(row, s='StorageUsage')
+        )
+
+    def process(self, row):
+        product_match_set = data.process_product_skel(row, {
+            'values.engine': self.a_engine(),
+            'values.instance_class': attr_product('instanceType'),
+            'values.multi_az': attr_product('deploymentOption', t=self.t_deployment_option),
+            'values.license_model': attr_product('licenseModel', t=self.t_license_model)
+        })
+
+        (price_match_sets, oiq_prices) = data.process_price_skel(row, {
+            'service_class': 'instance',
+        })
+
+        return product_match_set, price_match_sets, oiq_prices
 
 
 class S3OperationsHandler(AWSBaseHandler):
