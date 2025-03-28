@@ -5,7 +5,7 @@ from . import data, handlers
 
 
 HANDLERS = [
-    handlers.InstanceHandler(),
+    handlers.EC2InstanceHandler(),
     handlers.EC2HostHandler(),
     handlers.LoadBalancerHandler(),
     handlers.RDSInstanceHandler(),

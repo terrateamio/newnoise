@@ -198,28 +198,31 @@ class BaseInstanceHandler(AWSBaseHandler):
         )
 
     def process(self, row):
-        clean_ut = transforms.mk_clean_fun(p='-', s=':')
-
         return process(
             row,
             {
                 "values.instance_type": product('instanceType'),
-                "usage_type": product('usagetype', t=clean_ut)
             },
-            {},
+            {
+                'purchase_option': price('purchaseOption'),
+                'os': product('operatingSystem', t=str.lower)
+            },
             priced_by_hours,
             service_provider='aws',
             tf_resource=self.TF,
             service_class='instance')
 
 
-class InstanceHandler(BaseInstanceHandler):
+class EC2InstanceHandler(BaseInstanceHandler):
     TF = "aws_instance"
 
     def match(self, row):
+        # Only match Linux and Windows instance
         return (
             super().match(row)
-            and matchers.product_operation(row, v="RunInstances")
+            and (matchers.product_operation(row, v="RunInstances")
+                 # Windows
+                 or matchers.product_operation(row, v="RunInstances:0002"))
             and matchers.product_usagetype(
                 row, p="UnusedBox", t=transforms.mk_clean_fun(p='-', s=':')
             )
