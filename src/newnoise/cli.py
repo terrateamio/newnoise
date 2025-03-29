@@ -15,6 +15,7 @@ HANDLERS = [
     handlers.S3StorageHandler(),
     handlers.SQSHandler(),
     handlers.SQSFIFOHandler(),
+    handlers.LambdaHandler(),
 ]
 
 

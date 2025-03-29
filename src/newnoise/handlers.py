@@ -90,6 +90,14 @@ def price(key, t=None):
     return f
 
 
+def priced_by(units):
+    units = {unit.lower(): by for (unit, by) in units.items()}
+    def f(_row, price_attrs):
+        unit = price_attrs['unit'].lower()
+        return units.get(unit)
+    return f
+
+
 def priced_by_time(_row, price_attrs):
     unit = price_attrs['unit'].lower()
     if unit in PER_TIME:
@@ -570,4 +578,70 @@ class SQSHandler(AWSBaseHandler):
             priced_by_ops,
             service_provider='aws',
             tf_resource=self.TF,
-            service_class='requests')
+            service_class=const('requests'))
+
+
+class LambdaHandler(AWSBaseHandler):
+    TF = 'aws_lambda_function'
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v="AWSLambda")
+            and (matchers.product_usagetype(row, s='Lambda-GB-Second')
+                 or matchers.product_usagetype(row, s='Lambda-GB-Second-ARM')
+                 or matchers.product_usagetype(row, s='Lambda-Provisioned-Concurrency')
+                 or matchers.product_usagetype(row, s='Lambda-Provisioned-Concurrency-ARM')
+                 or matchers.product_usagetype(row, s='Lambda-Provisioned-GB-Second')
+                 or matchers.product_usagetype(row, s='Lambda-Provisioned-GB-Second-ARM')
+                 or (
+                     matchers.product_usagetype(row, c='Request')
+                     and not matchers.product_usagetype(row, c='Edge')
+                 )
+            )
+        )
+
+    def process(self, row):
+        return process(
+            row,
+            {
+                'values.architectures': product('usagetype', t=self.architectures),
+            },
+            {
+                'arch': product('usagetype', t=self.arch),
+            },
+            priced_by({
+                'Lambda-GB-Second': 't',
+                'Request': 'o',
+                'Requests': 'o',
+            }),
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class=product('usagetype', t=self.service_class))
+
+    def service_class(self, usagetype):
+        if usagetype.endswith('Lambda-GB-Second') \
+           or usagetype.endswith('Lambda-GB-Second-ARM'):
+           return 'duration'
+        elif 'Request' in usagetype and not 'Edge' in usagetype:
+            return 'requests'
+        elif usagetype.endswith('Lambda-Provisioned-Concurrency') \
+             or usagetype.endswith('Lambda-Provisioned-Concurrency-ARM'):
+            return 'provisioned_concurrency'
+        elif usagetype.endswith('Lambda-Provisioned-GB-Second') \
+             or usagetype.endswith('Lambda-Provisioned-GB-Second-ARM'):
+            return 'provisioned_duration'
+        else:
+            raise Exception('Unknown usagetype: {}'.format(usagetype))
+
+    def arch(self, usagetype):
+        if usagetype.endswith('ARM'):
+            return 'arm64'
+        else:
+            return 'x86'
+
+    def architectures(self, usagetype):
+        if usagetype.endswith('ARM'):
+            return 'arm64'
+        else:
+            return None
