@@ -1,7 +1,7 @@
 from . import data, matchers, transforms
 
 
-PER_HOUR = set([
+PER_TIME = set([
     v.lower()
     for v in [
             "Hrs",
@@ -90,10 +90,10 @@ def price(key, t=None):
     return f
 
 
-def priced_by_hours(_row, price_attrs):
+def priced_by_time(_row, price_attrs):
     unit = price_attrs['unit'].lower()
-    if unit in PER_HOUR:
-        return 'h'
+    if unit in PER_TIME:
+        return 't'
     elif unit in IGNORE_UNITS or unit in PER_OPERATION or unit in PER_DATA:
         return None
     else:
@@ -104,7 +104,7 @@ def priced_by_ops(_row, price_attrs):
     unit = price_attrs['unit'].lower()
     if unit in PER_OPERATION:
         return 'o'
-    elif unit in IGNORE_UNITS or unit in PER_HOUR or unit in PER_DATA:
+    elif unit in IGNORE_UNITS or unit in PER_TIME or unit in PER_DATA:
         return None
     else:
         raise Exception('price_by_operations unknoown unit: {}'.format(price_attrs))
@@ -115,7 +115,7 @@ def priced_by_data(_row, price_attrs):
     if unit in PER_DATA:
 
         return 'd'
-    elif unit in IGNORE_UNITS or unit in PER_HOUR or unit in PER_OPERATION:
+    elif unit in IGNORE_UNITS or unit in PER_TIME or unit in PER_OPERATION:
         return None
     else:
         raise Exception('price_by_data unknoown unit: {}'.format(price_attrs))
@@ -159,7 +159,7 @@ def process(row, product_ms, pricing_ms, priced_by, service_provider, tf_resourc
                     'end_usage_amount': price('endUsageAmount'),
                     'purchase_option': price('purchaseOption', t=normalize_purchase_option),
                     'region': product('regionCode'),
-                    'service_class': const(service_class),
+                    'service_class': service_class,
                     'service_provider': const(service_provider),
                     'start_provision_amount': product('minVolumeSize', t=normalize_provision),
                     'start_usage_amount': price('startUsageAmount'),
@@ -207,10 +207,10 @@ class BaseInstanceHandler(AWSBaseHandler):
                 'purchase_option': price('purchaseOption'),
                 'os': product('operatingSystem', t=str.lower)
             },
-            priced_by_hours,
+            priced_by_time,
             service_provider='aws',
             tf_resource=self.TF,
-            service_class='instance')
+            service_class=const('instance'))
 
 
 class EC2InstanceHandler(BaseInstanceHandler):
@@ -267,7 +267,7 @@ class LoadBalancerHandler(AWSBaseHandler):
             priced_by_data,
             service_provider='aws',
             tf_resource=self.TF,
-            service_class='data')
+            service_class=const('data'))
 
     def t_operation(self, attr):
         match attr:
@@ -361,10 +361,10 @@ class RDSInstanceHandler(RDSBaseHandler):
                 # 'values.license_model': product('licenseModel', t=self.t_license_model)
             },
             {},
-            priced_by_hours,
+            priced_by_time,
             service_provider='aws',
             tf_resource=self.TF,
-            service_class='instance')
+            service_class=const('instance'))
 
 
 class RDSIOPSHandler(RDSBaseHandler):
@@ -397,7 +397,7 @@ class RDSIOPSHandler(RDSBaseHandler):
             priced_by_ops,
             service_provider='aws',
             tf_resource=self.TF,
-            service_class='iops')
+            service_class=const('iops'))
 
     def storage_type(self, usagetype):
         if usagetype.endswith('StorageIOUsage'):
@@ -449,7 +449,7 @@ class RDSStorageHandler(RDSBaseHandler):
             priced_by_data,
             service_provider='aws',
             tf_resource=self.TF,
-            service_class='storage')
+            service_class=const('storage'))
 
     def storage_type(self, usagetype):
         if usagetype.endswith('StorageUsage'):
@@ -488,7 +488,7 @@ class S3OperationsHandler(AWSBaseHandler):
             priced_by_ops,
             service_provider='aws',
             tf_resource=self.TF,
-            service_class='requests')
+            service_class=const('requests'))
 
     def t_tier(self, attr):
         match attr:
@@ -518,7 +518,7 @@ class S3StorageHandler(AWSBaseHandler):
             priced_by_data,
             service_provider='aws',
             tf_resource=self.TF,
-            service_class='storage')
+            service_class=const('storage'))
 
     def storage_class(self, attr):
         return attr.lower().replace(' ', '_').replace('-', '_')
@@ -545,7 +545,7 @@ class SQSFIFOHandler(AWSBaseHandler):
             priced_by_ops,
             service_provider='aws',
             tf_resource=self.TF,
-            service_class='requests')
+            service_class=const('requests'))
 
 
 class SQSHandler(AWSBaseHandler):
