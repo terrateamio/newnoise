@@ -16,6 +16,11 @@ HANDLERS = [
     handlers.SQSHandler(),
     handlers.SQSFIFOHandler(),
     handlers.LambdaHandler(),
+    handlers.EBSStorageHandler(),
+    handlers.EBSIOPSHandler(),
+    handlers.EBSIOPSIO2Tier1Handler(),
+    handlers.EBSIOPSIO2Tier2Handler(),
+    handlers.EBSIOPSIO2Tier3Handler(),
 ]
 
 

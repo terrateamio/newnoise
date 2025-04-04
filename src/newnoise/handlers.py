@@ -121,7 +121,6 @@ def priced_by_ops(_row, price_attrs):
 def priced_by_data(_row, price_attrs):
     unit = price_attrs['unit'].lower()
     if unit in PER_DATA:
-
         return 'd'
     elif unit in IGNORE_UNITS or unit in PER_TIME or unit in PER_OPERATION:
         return None
@@ -645,3 +644,171 @@ class LambdaHandler(AWSBaseHandler):
             return 'arm64'
         else:
             return None
+
+
+class EBSStorageHandler(AWSBaseHandler):
+    TF = 'aws_ebs_volume'
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v="AmazonEC2")
+            and matchers.product_usagetype(row, c='VolumeUsage')
+        )
+
+    def process(self, row):
+        return process(
+            row,
+            {
+                'values.type': product('volumeApiName')
+            },
+            {
+                # Start and end usage added automatically, so turn those off.
+                'start_usage_amount': const(None),
+                'end_usage_amount': const(None),
+            },
+            priced_by({
+                'gb-mo': 'a=values.size'
+            }),
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class=const('storage'))
+
+
+class EBSIOPSHandler(AWSBaseHandler):
+    TF = 'aws_ebs_volume'
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v="AmazonEC2")
+            and matchers.product_usagetype(row, c='IOPS')
+            # io2 has special pricing tiers that we need to create in other handlers
+            and not matchers.product_attr(row, 'volumeApiName', v='io2')
+        )
+
+    def process(self, row):
+        return process(
+            row,
+            {
+                'values.type': product('volumeApiName')
+            },
+            {
+                'start_provision_amount': product('volumeApiName', t=self.start_provision_amount),
+                'end_provision_amount': product('volumeApiName', t=self.end_provision_amount),
+                # Start and end usage added automatically, so turn those off.
+                'start_usage_amount': const(None),
+                'end_usage_amount': const(None),
+            },
+            priced_by_ops,
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class=const('iops'))
+
+    def start_provision_amount(self, volume_type):
+        if volume_type == 'gp3':
+            return '3000'
+        else:
+            return None
+
+    def end_provision_amount(self, volume_type):
+        if volume_type == 'gp3':
+            return 'Inf'
+        else:
+            return None
+
+
+class EBSIOPSIO2Tier1Handler(AWSBaseHandler):
+    TF = 'aws_ebs_volume'
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v="AmazonEC2")
+            and matchers.product_usagetype(row, c='IOPS')
+            # io2 has special pricing tiers that we need to create in other handlers
+            and matchers.product_attr(row, 'volumeApiName', v='io2')
+            and matchers.product_usagetype(row, c='tier1')
+        )
+
+    def process(self, row):
+        return process(
+            row,
+            {
+                'values.type': product('volumeApiName')
+            },
+            {
+                'start_provision_amount': const('0'),
+                'end_provision_amount': const('32000'),
+                # Start and end usage added automatically, so turn those off.
+                'start_usage_amount': const(None),
+                'end_usage_amount': const(None),
+            },
+            priced_by_ops,
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class=const('iops'))
+
+
+class EBSIOPSIO2Tier2Handler(AWSBaseHandler):
+    TF = 'aws_ebs_volume'
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v="AmazonEC2")
+            and matchers.product_usagetype(row, c='IOPS')
+            # io2 has special pricing tiers that we need to create in other handlers
+            and matchers.product_attr(row, 'volumeApiName', v='io2')
+            and matchers.product_usagetype(row, c='tier2')
+        )
+
+    def process(self, row):
+        return process(
+            row,
+            {
+                'values.type': product('volumeApiName')
+            },
+            {
+                'start_provision_amount': const('32001'),
+                'end_provision_amount': const('64000'),
+                # Start and end usage added automatically, so turn those off.
+                'start_usage_amount': const(None),
+                'end_usage_amount': const(None),
+            },
+            priced_by_ops,
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class=const('iops'))
+
+
+class EBSIOPSIO2Tier3Handler(AWSBaseHandler):
+    TF = 'aws_ebs_volume'
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v="AmazonEC2")
+            and matchers.product_usagetype(row, c='IOPS')
+            # io2 has special pricing tiers that we need to create in other handlers
+            and matchers.product_attr(row, 'volumeApiName', v='io2')
+            and matchers.product_usagetype(row, c='tier3')
+        )
+
+    def process(self, row):
+        return process(
+            row,
+            {
+                'values.type': product('volumeApiName')
+            },
+            {
+                'start_provision_amount': const('64001'),
+                'end_provision_amount': const('Inf'),
+                # Start and end usage added automatically, so turn those off.
+                'start_usage_amount': const(None),
+                'end_usage_amount': const(None),
+            },
+            priced_by_ops,
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class=const('iops'))
