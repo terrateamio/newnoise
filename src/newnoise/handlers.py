@@ -812,3 +812,218 @@ class EBSIOPSIO2Tier3Handler(AWSBaseHandler):
             service_provider='aws',
             tf_resource=self.TF,
             service_class=const('iops'))
+
+
+class DynamoDBStorageHandler(AWSBaseHandler):
+    TF = 'aws_dynamodb_table'
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v='AmazonDynamoDB')
+            and matchers.product_usagetype(row, c='TimedStorage')
+            and not matchers.product_usagetype(row, c='IA-TimedStorage')
+        )
+
+    def process(self, row):
+        return process(
+            row,
+            {},
+            {
+                'table_class': const('standard'),
+            },
+            priced_by({
+                'gb-mo': 'd'
+            }),
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class=const('storage'))
+
+
+class DynamoDBStorageIAHandler(AWSBaseHandler):
+    TF = 'aws_dynamodb_table'
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v='AmazonDynamoDB')
+            and matchers.product_usagetype(row, c='IA-TimedStorage')
+        )
+
+    def process(self, row):
+        return process(
+            row,
+            {
+                'values.table_class': const('STANDARD_INFREQUENT_ACCESS'),
+            },
+            {
+                'table_class': const('ia'),
+            },
+            priced_by({
+                'gb-mo': 'd'
+            }),
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class=const('storage'))
+
+
+class DynamoDBRequestsHandler(AWSBaseHandler):
+    TF = 'aws_dynamodb_table'
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v='AmazonDynamoDB')
+            and ((matchers.product_usagetype(row, c='ReadRequestUnits')
+                  and not matchers.product_usagetype(row, c='IA-ReadRequestUnits'))
+                 or (matchers.product_usagetype(row, c='WriteRequestUnits')
+                     and not matchers.product_usagetype(row, c='IA-WriteRequestUnits'))
+            )
+        )
+
+    def process(self, row):
+        return process(
+            row,
+            {},
+            {
+                'request_type': product('usagetype', t=self.request_type),
+                'table_class': const('standard'),
+            },
+            priced_by({
+                'WriteRequestUnits': 'o',
+                'ReadRequestUnits': 'o',
+            }),
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class=const('requests'))
+
+    def request_type(self, attr):
+        if 'Read' in attr:
+            return 'read'
+        elif 'Write' in attr:
+            return 'write'
+        else:
+            raise Exception('Unknown request_type: {}'.format(attr))
+
+
+
+class DynamoDBRequestsIAHandler(AWSBaseHandler):
+    TF = 'aws_dynamodb_table'
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v='AmazonDynamoDB')
+            and (matchers.product_usagetype(row, c='IA-ReadRequestUnits')
+                 or matchers.product_usagetype(row, c='IA-WriteRequestUnits')
+            )
+        )
+
+    def process(self, row):
+        return process(
+            row,
+            {
+                'values.table_class': const('STANDARD_INFREQUENT_ACCESS'),
+            },
+            {
+                'request_type': product('usagetype', t=self.request_type),
+                'table_class': const('ia'),
+            },
+            priced_by({
+                'WriteRequestUnits': 'o',
+                'ReadRequestUnits': 'o',
+            }),
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class=const('storage'))
+
+    def request_type(self, attr):
+        if 'Read' in attr:
+            return 'read'
+        elif 'Write' in attr:
+            return 'write'
+        else:
+            raise Exception('Unknown request_type: {}'.format(attr))
+
+
+class DynamoDBReplHandler(AWSBaseHandler):
+    TF = 'aws_dynamodb_table'
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v='AmazonDynamoDB')
+            and matchers.product_usagetype(row, c='ReplWriteCapacity')
+            and not matchers.product_usagetype(row, c='IA-ReplWriteCapacity')
+        )
+
+    def process(self, row):
+        return process(
+            row,
+            {
+                'values.replica.region_name': product('regionCode'),
+            },
+            {
+                'table_class': const('standard'),
+                'region': const(None),
+            },
+            priced_by({
+                'ReplicatedWriteCapacityUnit-Hrs': 'o'
+            }),
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class=const('replication'))
+
+
+class DynamoDBReplIAHandler(AWSBaseHandler):
+    TF = 'aws_dynamodb_table'
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v='AmazonDynamoDB')
+            and matchers.product_usagetype(row, c='IA-ReplWriteCapacity')
+        )
+
+    def process(self, row):
+        return process(
+            row,
+            {
+                'values.table_class': const('STANDARD_INFREQUENT_ACCESS'),
+                'values.replica.region_name': product('regionCode'),
+            },
+            {
+                'table_class': const('ia'),
+                'region': const(None),
+            },
+            priced_by({
+                'ReplicatedWriteCapacityUnit-Hrs': 'o'
+            }),
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class=const('replication'))
+
+
+class DynamoDBStreamsHandler(AWSBaseHandler):
+    TF = 'aws_dynamodb_table'
+
+    def match(self, row):
+        return (
+            super().match(row)
+            and matchers.product_servicecode(row, v='AmazonDynamoDB')
+            and matchers.product_usagetype(row, c='Streams-Requests')
+        )
+
+    def process(self, row):
+        return process(
+            row,
+            {},
+            {
+                'request_type': const('stream'),
+            },
+            priced_by({
+                'requests': 'o'
+            }),
+            service_provider='aws',
+            tf_resource=self.TF,
+            service_class=const('requests'))

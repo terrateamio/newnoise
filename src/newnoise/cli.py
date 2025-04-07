@@ -21,6 +21,13 @@ HANDLERS = [
     handlers.EBSIOPSIO2Tier1Handler(),
     handlers.EBSIOPSIO2Tier2Handler(),
     handlers.EBSIOPSIO2Tier3Handler(),
+    handlers.DynamoDBStorageHandler(),
+    handlers.DynamoDBStorageIAHandler(),
+    handlers.DynamoDBRequestsHandler(),
+    handlers.DynamoDBRequestsIAHandler(),
+    handlers.DynamoDBReplIAHandler(),
+    handlers.DynamoDBReplIAHandler(),
+    handlers.DynamoDBStreamsHandler(),
 ]
 
 
