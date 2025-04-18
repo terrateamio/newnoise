@@ -1,51 +1,21 @@
 import argparse
-from collections import deque
 
-from . import data, handlers
-
-
-HANDLERS = [
-    handlers.EC2InstanceHandler(),
-    handlers.EC2HostHandler(),
-    handlers.LoadBalancerHandler(),
-    handlers.RDSInstanceHandler(),
-    handlers.RDSIOPSHandler(),
-    handlers.RDSStorageHandler(),
-    handlers.S3OperationsHandler(),
-    handlers.S3StorageHandler(),
-    handlers.SQSHandler(),
-    handlers.SQSFIFOHandler(),
-    handlers.LambdaHandler(),
-    handlers.EBSStorageHandler(),
-    handlers.EBSIOPSHandler(),
-    handlers.EBSIOPSIO2Tier1Handler(),
-    handlers.EBSIOPSIO2Tier2Handler(),
-    handlers.EBSIOPSIO2Tier3Handler(),
-    handlers.DynamoDBStorageHandler(),
-    handlers.DynamoDBStorageIAHandler(),
-    handlers.DynamoDBRequestsHandler(),
-    handlers.DynamoDBRequestsIAHandler(),
-    handlers.DynamoDBReplIAHandler(),
-    handlers.DynamoDBReplIAHandler(),
-    handlers.DynamoDBStreamsHandler(),
-]
+from . import aws, sheet
 
 
 def run():
     parser = argparse.ArgumentParser(description="NewNoise CLI")
-    parser.add_argument(
-        "input", type=str, help="Path to the input CSV",
-    )
-    parser.add_argument(
-        "-o", "--output", type=str, help="Path to the output directory", required=False
-    )
-    parser.add_argument(
-        "-c",
-        "--currency",
-        type=str,
-        help="Filter for prices quoted in particular currency (USD or CNY)",
-        required=False
-    )
-    args = parser.parse_args()
+    subparsers = parser.add_subparsers(dest="command", help="NewNoise subcommand")
 
-    deque(data.to_oiq(args.input, HANDLERS, output_dir=args.output, ccy=args.currency), maxlen=0)
+    aws.commands.init_parsers(subparsers)
+    sheet.commands.init_parsers(subparsers)
+
+    args = parser.parse_args()
+    if hasattr(args, "func") and callable(args.func):
+        args.func(args)
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    run()
