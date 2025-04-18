@@ -1,18 +1,36 @@
 from . import data
 
-
 # required fields
 
 
 def required_keys(data, keys):
+    """
+    Verifies all keys are are found in `data`.
+
+    data (dict): either a product attr dict or an individual price attr dict
+    keys (list): list of fields that must be present
+    """
     return len(set(keys) - set(data.keys())) == 0
 
 
 def required_attrs(row, keys):
+    """
+    Shorthand for verifying product attributes are present for row
+
+    row (list): a CSV row that has a product attributes column
+    keys (list): list of fields that must be present
+    """
     return required_keys(row[data.ATTRIBUTES], keys)
 
 
 def required_prices(row, keys):
+    """
+    Shorthand for verifying price attributes are present for every price
+    associated with the row
+
+    row (list): a CSV row that has a price attributes column
+    keys (list): list of fields that must be present
+    """
     for price in data.prices(row):
         if required_keys(price, keys):
             return True
@@ -24,6 +42,9 @@ def required_prices(row, keys):
 
 def product_attr(row, key, t=None, v=None, p=None, s=None, c=None):
     """
+    Verify the value of a product attribute. Several arguments are available
+    for influencing behavior of the match.
+
     t: apply transform function t before checks
     v: check v exact match for attr
     p: check p is found at start of attr
@@ -75,6 +96,9 @@ def product_group(row, **kw):
 
 def price_attr(row, key, v=None, p=None, ccy=None):
     """
+    Verify the value of a product's price attributes. Several arguments are
+    available for influencing behavior of the matches.
+
     v: check v exact match for attr
     p: check p is found at start of attr
     ccy: check ccy is match for at least one price (note: may not be what we want)
