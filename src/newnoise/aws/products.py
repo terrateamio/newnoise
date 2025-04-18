@@ -5,6 +5,7 @@ import os
 
 import aiohttp
 
+from .. import download
 from . import db, env
 
 
@@ -16,12 +17,12 @@ def fetch(args):
 
     # fetch pricing root for aws
     files = [(env.PRICE_ROOT, nr_path(noises_root, "root.json"))]
-    asyncio.run(download_files(noises_root, files))
+    asyncio.run(download.fetch_filepairs(files))
 
     # load pricing for all aws services
     root_path = nr_path(noises_root, "root.json")
     files = service_pairs(noises_root, root_path)
-    asyncio.run(download_files(noises_root, files))
+    asyncio.run(download.fetch_filepairs(files))
 
     return files
 
@@ -82,31 +83,3 @@ def service_pairs(nr, root_path):
         dst_file = nr_path(nr, "resources.json", parent=service)
         service_prices = urls["currentVersionUrl"]
         yield (service_prices, dst_file)
-
-
-async def download_file(nr, session, url, dst_file, semaphore):
-    async with semaphore:
-        async with session.head(url) as response:
-            svc_name = dst_file.replace(nr, "").split(os.sep)[1]
-
-            async with session.get(url) as response:
-                if response.status == 200:
-                    with open(dst_file, "wb") as f:
-                        async for chunk in response.content.iter_chunked(1024):
-                            f.write(chunk)
-                    print(f"Complete: {svc_name}")
-                else:
-                    raise Exception(f"Failed to download {url}. Status code: {response.status}")
-
-
-async def download_files(nr, filepairs, max_concurrent=5):
-    semaphore = asyncio.Semaphore(max_concurrent)
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        for url, dst_path in filepairs:
-            dst_parents = os.path.dirname(dst_path)
-            if dst_parents:
-                os.makedirs(dst_parents, exist_ok=True)
-            svc_url = f"{env.PRICE_API}{url}"
-            tasks.append(download_file(nr, session, svc_url, dst_path, semaphore))
-        await asyncio.gather(*tasks)
