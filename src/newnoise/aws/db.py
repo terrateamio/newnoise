@@ -4,9 +4,8 @@ import os
 import sqlite3
 import sys
 
-import json_stream
+from . import transforms as t
 
-# productHash,sku,vendorName,region,service,productFamily,attributes,prices
 DB_CREATE = """
 CREATE TABLE products (
     sku TEXT PRIMARY KEY,
@@ -70,70 +69,63 @@ def mk_db(filename):
     return db
 
 
-def get_single(d):
-    """
-    short hand for function that gets around excessive structure in AWS
-    price data
-    """
-    return list(d.values())[0]
+def mk_insert_product(db, service, render):
+    def handler(sku, product):
+        # product comes in as data stream that must be rendered
+        product = render(product)
+        productFamily = product.get("productFamily", "")
+        region = product["attributes"].get("regionCode", "")
+        attributes = json.dumps(product["attributes"])
+        db.execute(DB_INSERT_PRODUCT, (sku, region, service, productFamily, attributes))
+
+    return handler
 
 
-def flatten_price(price, price_type="on_demand"):
-    for pid, price_dim in price["priceDimensions"].items():
-        # price_dim = get_single(price["priceDimensions"])
-        price_id = price_dim["rateCode"]
+def mk_insert_price(db, price_type, render):
+    applies_tos = []
 
-        new_p = {
-            "effectiveDateStart": price["effectiveDate"],
-            "purchaseOption": price_type,
-            "unit": price_dim["unit"],
-            "description": price_dim["description"],
-        }
+    def handler(sku, prices):
+        # prices list comes in as data stream that must be rendered
+        prices = render(prices)
+        for price in prices.values():
+            price_dim = t.get_single(price["priceDimensions"])
+            if "appliesTo" in price_dim and len(price_dim["appliesTo"]) > 0:
+                # dont add entry for price containers (eg. list in appliesto)
+                applies_tos.append(price)
+            else:
+                for flat_p in t.flatten_prices(price, price_type):
+                    db.execute(DB_ADD_PRICE, (json.dumps(flat_p), sku))
 
-        if "beginRange" in price_dim:
-            new_p["startUsageAmount"] = price_dim["beginRange"]
-        if "endRange" in price_dim:
-            new_p["endUsageAmount"] = price_dim["endRange"]
-
-        ppu = price_dim["pricePerUnit"]
-        if "USD" in ppu:
-            new_p["USD"] = ppu["USD"]
-        elif "CNY" in ppu:
-            new_p["CNY"] = ppu["CNY"]
-
-        if price_type == "reserved":
-            term_attrs = price["termAttributes"]
-            new_p["termLength"] = term_attrs.get("LeaseContractLength", "")
-            new_p["termPurchaseOption"] = term_attrs.get("PurchaseOption", "")
-            new_p["termOfferingClass"] = term_attrs.get("OfferingClass", "")
-
-        yield {price_id: new_p}
+    return handler, applies_tos
 
 
-def find_start_tier(price_dims):
-    for k, v in price_dims.items():
-        if "startUsageAmount" in v and v["startUsageAmount"] == "0":
-            return k
-    else:
-        print("NO START TIER:", price_dims)
-        return None
+def load_data(db, data, handler):
+    db.execute("BEGIN TRANSACTION;")
+    for idx, (sku, thing) in enumerate(data.items()):
+        handler(sku, thing)
+        if idx % 10000 == 0:
+            db.commit()
+            db.execute("BEGIN TRANSACTION;")
+    print(f"{datetime.datetime.now().isoformat()} :: {idx + 1}")
+    db.commit()
 
 
-def merge_start_tier(sku_prices, new_start_tier):
-    new_id, new_dim = list(new_start_tier.items())[0]
+def update_applies(db, applies_tos, price_type):
+    if not applies_tos:
+        return
+    for ato in applies_tos:
+        ato_dim = t.get_single(ato["priceDimensions"])
+        matching_skus = ato_dim["appliesTo"]
+        ato_flat = next(t.flatten_prices(ato, price_type))
+        db.execute("BEGIN TRANSACTION;")
+        for sku, _, prices in find_skus(db, matching_skus):
+            t.merge_start_tier(prices, ato_flat)
+            prices = [json.dumps(price) for price in prices]
+            db.execute(DB_REPLACE_PRICES, (json.dumps(prices), sku))
+        db.commit()
 
-    price_dims = sku_prices[0]
-    lowest_id = find_start_tier(price_dims)
-    if lowest_id:
-        # replace lowest tier's begin range with free tier's end range
-        lowest_dim = price_dims.pop(lowest_id)
-        lowest_dim["startUsageAmount"] = new_dim["endUsageAmount"]
-        price_dims[lowest_id] = lowest_dim
-        # save copy of free tier
-        price_dims[new_id] = new_dim
 
-
-def fetch_skus(db, skus):
+def find_skus(db, skus):
     qmarks = ",".join(["?"] * len(skus))
     query = DB_SELECT_SKUS % qmarks
     products = db.execute(query, skus)
@@ -144,114 +136,6 @@ def fetch_skus(db, skus):
         yield sku, prod_attrs, p_data
 
 
-def mk_insert_product(db, service):
-    def handler(sku, product):
-        productFamily = product.get("productFamily", "")
-        region = product["attributes"].get("regionCode", "")
-        attributes = json.dumps(product["attributes"])
-        db.execute(DB_INSERT_PRODUCT, (sku, region, service, productFamily, attributes))
-
-    return handler
-
-
-def mk_insert_price(db, price_type):
-    applies_tos = []
-
-    def handler(sku, prices):
-        for p in prices.values():
-            price_dim = get_single(p["priceDimensions"])
-            if "appliesTo" in price_dim and len(price_dim["appliesTo"]) > 0:
-                # dont add entry for price containers (eg. list in appliesto)
-                applies_tos.append(p)
-            else:
-                # TODO: flatten
-                for flat_p in flatten_price(p, price_type):
-                    db.execute(DB_ADD_PRICE, (json.dumps(flat_p), sku))
-
-    return handler, applies_tos
-
-
-def load_data(db, data, handler):
-    db.execute("BEGIN TRANSACTION;")
-    for idx, (sku, thing) in enumerate(data.items()):
-        thing = json_stream.to_standard_types(thing)
-        handler(sku, thing)
-        if idx % 10000 == 0:
-            db.commit()
-            db.execute("BEGIN TRANSACTION;")
-    print(f"{datetime.datetime.now().isoformat()} :: {idx + 1}")
-    db.commit()
-
-
-def load_products(db, filename):
-    data = json_stream.load(open(filename))
-    service = os.path.basename(os.path.dirname(filename))
-    handler = mk_insert_product(db, service)
-    products = data["products"]
-    load_data(db, products, handler)
-
-
-def load_prices_on_demand(db, filename):
-    data = json_stream.load(open(filename))
-    handler, applies_tos = mk_insert_price(db, "on_demand")
-    # working around json_stream
-    try:
-        prices = data["terms"]["OnDemand"]
-    except Exception:
-        return
-    load_data(db, prices, handler)
-    load_applies(db, applies_tos, "on_demand")
-
-
-def load_prices_reserved(db, filename):
-    data = json_stream.load(open(filename))
-    handler, _ = mk_insert_price(db, "reserved")
-    # working around json_stream
-    try:
-        prices = data["terms"]["Reserved"]
-    except Exception:
-        return
-    load_data(db, prices, handler)
-
-
-def load_applies(db, applies_tos, price_type):
-    if not applies_tos:
-        return
-    for ato in applies_tos:
-        ato_dim = get_single(ato["priceDimensions"])
-        matching_skus = ato_dim["appliesTo"]
-        # TODO: flatten
-        ato_flat = next(flatten_price(ato, price_type))
-        db.execute("BEGIN TRANSACTION;")
-        for sku, _, prices in fetch_skus(db, matching_skus):
-            merge_start_tier(prices, ato_flat)
-            prices = [json.dumps(p) for p in prices]
-            db.execute(DB_REPLACE_PRICES, (json.dumps(prices), sku))
-        db.commit()
-
-
-def load_service(db, filename):
-    """
-    Works through resource file by entering everything into sqlite
-    """
-    service = os.path.basename(os.path.dirname(filename))
-    print("#####", service)
-    load_products(db, filename)
-    load_prices_on_demand(db, filename)
-    load_prices_reserved(db, filename)
-
-
 def dump_products(db):
     for row in db.execute(DB_DUMP_ALL):
-        (ph, sku, vn, r, s, pf, a, p) = row
-
-        # restructure prices to match OG csv
-        loaded_prices = json.loads(p)
-        new_prices = []
-        for lp in loaded_prices:
-            lp = json.loads(lp)
-            lp = get_single(lp)
-            new_prices.append(lp)
-        new_prices = json.dumps({"aoc_for_prez_2028": new_prices})
-
-        yield (ph, sku, vn, r, s, pf, a, new_prices)
+        yield row
