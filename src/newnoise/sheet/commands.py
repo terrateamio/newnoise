@@ -29,16 +29,21 @@ HANDLERS = [
 ]
 
 
-def do_it(args):
+def sheet(args):
+    input_file = args.input
+    output_dir = args.output
+    ccy = args.currency
+
+    # to_oiq returns a generator. deque exhausts it.
     deque(
-        data.to_oiq(args.input, HANDLERS, output_dir=args.output, ccy=args.currency),
+        data.to_oiq(input_file, HANDLERS, output_dir=output_dir, ccy=ccy),
         maxlen=0,
     )
 
 
 def init_parsers(parsers):
     sheet_parser = parsers.add_parser("sheet", help="Create OIQ price sheet")
-    sheet_parser.set_defaults(func=do_it, parser=sheet_parser)
+    sheet_parser.set_defaults(func=sheet, parser=sheet_parser)
 
     sheet_parser.add_argument(
         "input",
