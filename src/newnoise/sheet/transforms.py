@@ -37,7 +37,31 @@ def mk_clean_fun(p=None, s=None):
     """
     Allows for delayed execution of `clean`.
     """
+
     def f(attr):
         return clean(attr, p=p, s=s)
+
     return f
 
+
+def normalize_purchase_option(attr):
+    """
+    Converts purchase option values to OIQ format
+    """
+    if attr == "OnDemand":
+        return "on_demand"
+    else:
+        return attr
+
+
+def normalize_provision(attr):
+    """
+    Converts provision values to OIQ format
+    """
+    amount, unit = attr.split()
+    amount = int(amount)
+    match unit:
+        case "TB":
+            return str(amount * 1000)
+        case "GB":
+            return str(amount)
