@@ -13,4 +13,4 @@ NOISES_CSV = os.path.join(NOISES_ROOT, "products.csv")
 PRICE_API = "https://pricing.us-east-1.amazonaws.com"
 
 # HTTP path to file that stores the root of the pricing tree
-PRICE_ROOT = "/offers/v1.0/aws/index.json"
+PRICE_ROOT = f"{PRICE_API}/offers/v1.0/aws/index.json"
