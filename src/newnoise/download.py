@@ -3,8 +3,6 @@ import os
 
 import aiohttp
 
-from . import env
-
 
 async def fetch_file(session, url, dst_file, semaphore):
     """
@@ -60,8 +58,7 @@ async def fetch_filepairs(filepairs, max_concurrent=5):
                 os.makedirs(dst_parents, exist_ok=True)
 
             # coroutine for each URL
-            svc_url = f"{env.PRICE_API}{url}"
-            tasks.append(fetch_file(session, svc_url, dst_path, semaphore))
+            tasks.append(fetch_file(session, url, dst_path, semaphore))
 
         # make fetch happen
         await asyncio.gather(*tasks)
