@@ -1,85 +1,76 @@
-import asyncio
-import csv
 import json
-import os
-
-import aiohttp
-
-from .. import download
-from . import db, env
 
 
-def fetch(args):
-    noises_root = args.datadir
-
-    # prepare work dir
-    os.makedirs(noises_root, exist_ok=True)
-
-    # fetch pricing root for aws
-    files = [(env.PRICE_ROOT, nr_path(noises_root, "root.json"))]
-    asyncio.run(download.fetch_filepairs(files))
-
-    # load pricing for all aws services
-    root_path = nr_path(noises_root, "root.json")
-    files = service_pairs(noises_root, root_path)
-    asyncio.run(download.fetch_filepairs(files))
-
-    return files
+def get_single(d):
+    """
+    short hand for function that gets around excessive structure in AWS
+    price data
+    """
+    return list(d.values())[0]
 
 
-def load(args):
-    noises_root = args.datadir
-    db_name = args.name
+def flatten_prices(price, price_type="on_demand"):
+    for _price_id, price_dim in price["priceDimensions"].items():
+        price_id = price_dim["rateCode"]
 
-    root_path = nr_path(noises_root, "root.json")
-    pairs = service_pairs(noises_root, root_path)
-    dbconn = db.mk_db(db_name)
-    for _, resources_file in pairs:
-        db.load_service(dbconn, resources_file)
-    # dbconn = db.mk_db(db_name)
-    # db.load_service(dbconn, "./noises/aws/AWSQueueService/resources.json")
+        new_p = {
+            "effectiveDateStart": price["effectiveDate"],
+            "purchaseOption": price_type,
+            "unit": price_dim["unit"],
+            "description": price_dim["description"],
+        }
 
+        if "beginRange" in price_dim:
+            new_p["startUsageAmount"] = price_dim["beginRange"]
+        if "endRange" in price_dim:
+            new_p["endUsageAmount"] = price_dim["endRange"]
 
-def dump(args):
-    csvfile = args.csvfile
-    db_name = args.name
+        ppu = price_dim["pricePerUnit"]
+        if "USD" in ppu:
+            new_p["USD"] = ppu["USD"]
+        elif "CNY" in ppu:
+            new_p["CNY"] = ppu["CNY"]
 
-    dbconn = db.connect(db_name)
-    with open(csvfile, mode="w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file, quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        headers = [
-            "productHash",
-            "sku",
-            "vendorName",
-            "region",
-            "service",
-            "productFamily",
-            "attributes",
-            "prices",
-        ]
-        writer.writerow(headers)
-        for row in db.dump_products(dbconn):
-            writer.writerow(row)
+        if price_type == "reserved":
+            term_attrs = price["termAttributes"]
+            new_p["termLength"] = term_attrs.get("LeaseContractLength", "")
+            new_p["termPurchaseOption"] = term_attrs.get("PurchaseOption", "")
+            new_p["termOfferingClass"] = term_attrs.get("OfferingClass", "")
+
+        yield {price_id: new_p}
 
 
-def nr_path(noises_root, path, parent=None):
-    if parent:
-        path = os.path.join(parent, path)
-    return os.path.join(noises_root, path)
+def price_csv_format(price):
+    """
+    restructure prices to match expected csv format
+    """
+    loaded_prices = json.loads(price)
+    new_prices = []
+    for lp in loaded_prices:
+        lp = json.loads(lp)
+        lp = get_single(lp)
+        new_prices.append(lp)
+    return json.dumps({"aoc_for_prez_2028": new_prices})
 
 
-def service_pairs(nr, root_path):
-    # load it
-    root_data = json.load(open(root_path))
+def find_start_tier(price_dims):
+    for k, v in price_dims.items():
+        if "startUsageAmount" in v and v["startUsageAmount"] == "0":
+            return k
+    else:
+        print("NO START TIER:", price_dims)
+        return None
 
-    # fetch pricing root for each aws service
-    for service, urls in root_data["offers"].items():
-        # dir for service data
-        svc_dir = nr_path(nr, service)
-        os.makedirs(svc_dir, exist_ok=True)
 
-        # write prices
-        # TODO: consider date based filenames for resources
-        dst_file = nr_path(nr, "resources.json", parent=service)
-        service_prices = urls["currentVersionUrl"]
-        yield (service_prices, dst_file)
+def merge_start_tier(sku_prices, new_start_tier):
+    new_id, new_dim = list(new_start_tier.items())[0]
+
+    price_dims = sku_prices[0]
+    lowest_id = find_start_tier(price_dims)
+    if lowest_id:
+        # replace lowest tier's begin range with free tier's end range
+        lowest_dim = price_dims.pop(lowest_id)
+        lowest_dim["startUsageAmount"] = new_dim["endUsageAmount"]
+        price_dims[lowest_id] = lowest_dim
+        # save copy of free tier
+        price_dims[new_id] = new_dim
