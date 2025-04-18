@@ -1,3 +1,3 @@
-from . import commands, data, handlers, matchers, transforms
+from . import attributes, commands, data, handlers, matchers, transforms
 
-__all__ = [commands, data, handlers, matchers, transforms]
+__all__ = [attributes, commands, data, handlers, matchers, transforms]
