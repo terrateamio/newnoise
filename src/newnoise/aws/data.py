@@ -30,23 +30,19 @@ def service_pairs(nr, root_path):
         yield (prices_url, dst_file)
 
 
-def render(data_stream):
-    return json_stream.to_standard_types(data_stream)
-
-
 def load_products(dbconn, service, products):
-    handler = db.mk_insert_product(dbconn, service, render)
+    handler = db.mk_insert_product(dbconn, service)
     db.load_data(dbconn, products, handler)
 
 
 def load_prices_on_demand(dbconn, prices):
-    handler = db.mk_insert_price(dbconn, "on_demand", render)
+    handler, applies_tos = db.mk_insert_price(dbconn, "on_demand")
     db.load_data(dbconn, prices, handler)
     db.update_applies(dbconn, applies_tos, "on_demand")
 
 
 def load_prices_reserved(dbconn, prices):
-    handler = db.mk_insert_price(dbconn, "reserved", render)
+    handler, _ = db.mk_insert_price(dbconn, "reserved")
     db.load_data(dbconn, prices, handler)
 
 
