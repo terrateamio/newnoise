@@ -4,6 +4,8 @@ import os
 import sqlite3
 import sys
 
+import json_stream
+
 from . import transforms as t
 
 DB_CREATE = """
@@ -13,13 +15,13 @@ CREATE TABLE products (
     service TEXT,
     productFamily TEXT,
     attributes TEXT,
-    prices TEXT
+    prices TEXT default (json_array())
 )
 """
 
 DB_INSERT_PRODUCT = """INSERT INTO
-    products (sku, region, service, productFamily, attributes, prices)
-    VALUES (?, ?, ?, ?, ?, json_array())
+    products (sku, region, service, productFamily, attributes)
+    VALUES (?, ?, ?, ?, ?)
 """
 
 DB_SELECT_SKUS = """SELECT sku, attributes, prices
@@ -69,45 +71,47 @@ def mk_db(filename):
     return db
 
 
-def mk_insert_product(db, service, render):
-    def handler(sku, product):
-        # product comes in as data stream that must be rendered
-        product = render(product)
-        productFamily = product.get("productFamily", "")
-        region = product["attributes"].get("regionCode", "")
-        attributes = json.dumps(product["attributes"])
-        db.execute(DB_INSERT_PRODUCT, (sku, region, service, productFamily, attributes))
+def mk_insert_product(db, service):
+    def handler(sku_products):
+        rows = []
+        for sku, product in sku_products:
+            productFamily = product.get("productFamily", "")
+            region = product["attributes"].get("regionCode", "")
+            attributes = json.dumps(product["attributes"])
+            rows.append((sku, region, service, productFamily, attributes))
+        db.executemany(DB_INSERT_PRODUCT, rows)
 
     return handler
 
 
-def mk_insert_price(db, price_type, render):
+def mk_insert_price(db, price_type):
     applies_tos = []
 
-    def handler(sku, prices):
-        # prices list comes in as data stream that must be rendered
-        prices = render(prices)
-        for price in prices.values():
-            price_dim = t.get_single(price["priceDimensions"])
-            if "appliesTo" in price_dim and len(price_dim["appliesTo"]) > 0:
-                # dont add entry for price containers (eg. list in appliesto)
-                applies_tos.append(price)
-            else:
-                for flat_p in t.flatten_prices(price, price_type):
-                    db.execute(DB_ADD_PRICE, (json.dumps(flat_p), sku))
+    def handler(sku_prices):
+        for sku, prices in sku_prices:
+            for price in prices.values():
+                price_dim = t.get_single(price["priceDimensions"])
+                if "appliesTo" in price_dim and len(price_dim["appliesTo"]) > 0:
+                    # dont add entry for price containers (eg. list in appliesto)
+                    applies_tos.append(price)
+                else:
+                    for flat_p in t.flatten_prices(price, price_type):
+                        db.execute(DB_ADD_PRICE, (json.dumps(flat_p), sku))
 
     return handler, applies_tos
 
 
 def load_data(db, data, handler):
     db.execute("BEGIN TRANSACTION;")
+    batch = []
     for idx, (sku, thing) in enumerate(data.items()):
-        handler(sku, thing)
-        if idx % 10000 == 0:
-            db.commit()
-            db.execute("BEGIN TRANSACTION;")
-    print(f"{datetime.datetime.now().isoformat()} :: {idx + 1}")
+        batch.append((sku, json_stream.to_standard_types(thing)))
+        if idx % 50000 == 0:
+            handler(batch)
+            batch = []
+    handler(batch)
     db.commit()
+    print(f"{datetime.datetime.now().isoformat()} :: {idx + 1}")
 
 
 def update_applies(db, applies_tos, price_type):

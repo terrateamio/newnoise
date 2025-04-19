@@ -30,37 +30,34 @@ def service_pairs(nr, root_path):
         yield (prices_url, dst_file)
 
 
-def render(data_stream):
-    return json_stream.to_standard_types(data_stream)
-
-
-def load_products(dbconn, filename):
-    data = json_stream.load(open(filename))
-    service = os.path.basename(os.path.dirname(filename))
-    handler = db.mk_insert_product(dbconn, service, render)
-    products = data["products"]
+def load_products(dbconn, service, products):
+    handler = db.mk_insert_product(dbconn, service)
     db.load_data(dbconn, products, handler)
 
 
-def load_prices_on_demand(dbconn, filename):
-    data = json_stream.load(open(filename))
-    try:
-        prices = data["terms"]["OnDemand"]
-    except Exception:
-        return
-    handler, applies_tos = db.mk_insert_price(dbconn, "on_demand", render)
+def load_prices_on_demand(dbconn, prices):
+    handler, applies_tos = db.mk_insert_price(dbconn, "on_demand")
     db.load_data(dbconn, prices, handler)
     db.update_applies(dbconn, applies_tos, "on_demand")
 
 
-def load_prices_reserved(dbconn, filename):
-    data = json_stream.load(open(filename))
-    try:
-        prices = data["terms"]["Reserved"]
-    except Exception:
-        return
-    handler, _ = db.mk_insert_price(dbconn, "reserved", render)
+def load_prices_reserved(dbconn, prices):
+    handler, _ = db.mk_insert_price(dbconn, "reserved")
     db.load_data(dbconn, prices, handler)
+
+
+def load_all(db, filename):
+    data = json_stream.load(open(filename))
+
+    for k, v in data.items():
+        if k == 'products':
+            load_products(db, os.path.basename(os.path.dirname(filename)), v)
+        elif k == 'terms':
+            for k, v in v.items():
+                if k == 'OnDemand':
+                    load_prices_on_demand(db, v)
+                elif k == 'Reserved':
+                    load_prices_reserved(db, v)
 
 
 def load_service(db, filename):
@@ -69,6 +66,7 @@ def load_service(db, filename):
     """
     service = os.path.basename(os.path.dirname(filename))
     print("#####", service)
-    load_products(db, filename)
-    load_prices_on_demand(db, filename)
-    load_prices_reserved(db, filename)
+    load_all(db, filename)
+    # load_products(db, filename)
+    # load_prices_on_demand(db, filename)
+    # load_prices_reserved(db, filename)
