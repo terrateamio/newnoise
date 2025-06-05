@@ -16,6 +16,14 @@ newnoise aws dump
 newnoise sheet "noises/aws/products.csv"
 ```
 
+With uv:
+```
+uv run newnoise aws fetch
+uv run newnoise aws load
+uv run newnoise aws dump
+uv run newnoise sheet "noises/aws/products.csv"
+```
+
 The last command writes the OIQ sheet to "oiqdata/prices.csv"
 
 
@@ -26,4 +34,12 @@ git clone git@github.com:terrateamio/newnoise
 cd newnoise/src
 python -mvenv venv
 pip install -e .
+```
+
+### Using uv (optional)
+
+```
+git clone git@github.com:terrateamio/newnoise
+cd newnoise
+uv sync
 ```
